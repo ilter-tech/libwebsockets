@@ -1459,11 +1459,24 @@ lws_h2_parse_end_of_frame(struct lws *wsi)
 
 			/* pass on the initial headers to SID 1 */
 			h2n->swsi->http.ah = wsi->http.ah;
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+			lws_fi_import(&h2n->swsi->fic, &wsi->fic);
+#endif
 			h2n->swsi->client_mux_substream = 1;
 			h2n->swsi->client_h2_alpn = 1;
 #if defined(LWS_WITH_CLIENT)
 			h2n->swsi->flags = wsi->flags;
+#if defined(LWS_WITH_CONMON)
+			/* sid1 needs to represent the connection experience
+			 * ... we take over responsibility for the DNS list
+			 * copy as well
+			 */
+			h2n->swsi->conmon = wsi->conmon;
+			h2n->swsi->conmon_datum = wsi->conmon_datum;
+			h2n->swsi->sa46_peer = wsi->sa46_peer;
+			wsi->conmon.dns_results_copy = NULL;
 #endif
+#endif /* CLIENT */
 
 			h2n->swsi->a.protocol = wsi->a.protocol;
 			if (h2n->swsi->user_space &&
@@ -1833,6 +1846,10 @@ lws_h2_parse_end_of_frame(struct lws *wsi)
 
 		if ((uint64_t)eff_wsi->txc.tx_cr + (uint64_t)h2n->hpack_e_dep >
 		    (uint64_t)0x7fffffff) {
+			lwsl_warn("%s: WINDOW_UPDATE 0x%llx + 0x%llx = 0x%llx, too high\n",
+					__func__, (unsigned long long)eff_wsi->txc.tx_cr,
+					(unsigned long long)h2n->hpack_e_dep,
+					(unsigned long long)eff_wsi->txc.tx_cr + (unsigned long long)h2n->hpack_e_dep);
 			if (h2n->sid)
 				lws_h2_rst_stream(h2n->swsi,
 						  H2_ERR_FLOW_CONTROL_ERROR,
@@ -2110,8 +2127,13 @@ lws_h2_parser(struct lws *wsi, unsigned char *in, lws_filepos_t _inlen,
 					     WSI_TOKEN_HTTP_CONTENT_LENGTH) &&
 				    h2n->swsi->http.rx_content_length &&
 				    h2n->swsi->http.rx_content_remain <
-						    lws_ptr_diff_size_t(iend, in) + 1 && /* last */
+						    lws_ptr_diff_size_t(iend, in) + 1 - 9 && /* last */
 				    h2n->inside < h2n->length) {
+
+					lwsl_warn("%s: %lu %lu %lu %lu\n", __func__,
+						  (unsigned long)h2n->swsi->http.rx_content_remain,
+						(unsigned long)(lws_ptr_diff_size_t(iend, in) + 1 - 9),
+						(unsigned long)h2n->inside, (unsigned long)h2n->length);
 
 					/* unread data in frame */
 					lws_h2_goaway(wsi,

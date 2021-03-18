@@ -120,6 +120,8 @@ rops_handle_POLLIN_raw_skt(struct lws_context_per_thread *pt, struct lws *wsi,
 			buffered = lws_buflist_aware_read(pt, wsi, &ebuf, 1, __func__);
 			switch (ebuf.len) {
 			case 0:
+				if (wsi->unix_skt)
+					break;
 				lwsl_info("%s: read 0 len\n", __func__);
 				wsi->seen_zero_length_recv = 1;
 				if (lws_change_pollfd(wsi, LWS_POLLIN, 0))
@@ -140,20 +142,9 @@ rops_handle_POLLIN_raw_skt(struct lws_context_per_thread *pt, struct lws *wsi,
 			}
 
 #if defined(LWS_WITH_UDP)
-			if (wsi->a.context->udp_loss_sim_rx_pc) {
-				uint16_t u16;
-				/*
-				 * We should randomly drop some of these
-				 */
-
-				if (lws_get_random(wsi->a.context, &u16, 2) == 2 &&
-				    ((u16 * 100) / 0xffff) <=
-					    wsi->a.context->udp_loss_sim_rx_pc) {
-					lwsl_warn("%s: dropping udp rx\n", __func__);
-					/* pretend it was handled */
-					n = ebuf.len;
-					goto post_rx;
-				}
+			if (lws_fi(&wsi->fic, "udp_rx_loss")) {
+				n = ebuf.len;
+				goto post_rx;
 			}
 #endif
 

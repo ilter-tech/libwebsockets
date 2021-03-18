@@ -76,6 +76,7 @@ typedef struct lws_metric {
 	/* public part overallocated */
 } lws_metric_t;
 
+<<<<<<< HEAD
 #define priv_to_pub(_x) ((lws_metric_pub_t *)&(_x)[1])
 
 #if defined(LWS_WITH_SYS_METRICS)
@@ -85,10 +86,25 @@ typedef struct lws_metric {
 		lws_metrics_hist_bump_(priv_to_pub(_wsi->a.context->_hist), _name)
 #define lws_metrics_hist_bump_priv_ss(_ss, _hist, _name) \
 		lws_metrics_hist_bump_(priv_to_pub(_ss->context->_hist), _name)
+=======
+
+#if defined(LWS_WITH_SYS_METRICS)
+#define lws_metrics_hist_bump_priv(_mt, _name) \
+		lws_metrics_hist_bump_(lws_metrics_priv_to_pub(_mt), _name)
+#define lws_metrics_hist_bump_priv_wsi(_wsi, _hist, _name) \
+		lws_metrics_hist_bump_(lws_metrics_priv_to_pub(_wsi->a.context->_hist), _name)
+#define lws_metrics_hist_bump_priv_ss(_ss, _hist, _name) \
+		lws_metrics_hist_bump_(lws_metrics_priv_to_pub(_ss->context->_hist), _name)
+#define lws_metrics_priv_to_pub(_x) ((lws_metric_pub_t *)&(_x)[1])
+>>>>>>> upstream/master
 #else
 #define lws_metrics_hist_bump_priv(_mt, _name)
 #define lws_metrics_hist_bump_priv_wsi(_wsi, _hist, _name)
 #define lws_metrics_hist_bump_priv_ss(_ss, _hist, _name)
+<<<<<<< HEAD
+=======
+#define lws_metrics_priv_to_pub(_x) ((lws_metric_pub_t *)NULL)
+>>>>>>> upstream/master
 #endif
 
 #if defined(LWS_WITH_SECURE_STREAMS_PROXY_API)

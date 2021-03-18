@@ -672,7 +672,11 @@ lws_service_fd_tsi(struct lws_context *context, struct lws_pollfd *pollfd,
 	 * is possible.
 	 */
 
+<<<<<<< HEAD
 	if (pollfd->revents & LWS_POLLHUP) {
+=======
+	if ((pollfd->revents & LWS_POLLHUP) == LWS_POLLHUP) {
+>>>>>>> upstream/master
 		wsi->socket_is_permanently_unusable = 1;
 
 		if (!(pollfd->revents & pollfd->events & LWS_POLLIN)) {

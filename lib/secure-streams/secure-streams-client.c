@@ -26,7 +26,7 @@ lws_sspc_event_helper(lws_sspc_handle_t *h, lws_ss_constate_t cs,
 	if (!h)
 		return LWSSSSRET_OK;
 
-	if (lws_ss_check_next_state(&h->prev_ss_state, cs))
+	if (lws_ss_check_next_state(&h->lc, &h->prev_ss_state, cs))
 		return LWSSSSRET_DESTROY_ME;
 
 	if (!h->ssi.state)
@@ -73,12 +73,27 @@ lws_sspc_sul_retry_cb(lws_sorted_usec_list_t *sul)
 	i.ssl_connection = LCCSCF_SECSTREAM_PROXY_LINK;
 
 	lws_metrics_caliper_bind(h->cal_txn, h->context->mt_ss_cliprox_conn);
+<<<<<<< HEAD
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+	lws_metrics_tag_add(&h->cal_txn.mtags_owner, "ss", h->ssi.streamtype);
+#endif
+>>>>>>> upstream/master
 
 	/* this wsi is the link to the proxy */
 
 	if (!lws_client_connect_via_info(&i)) {
 
+<<<<<<< HEAD
 		lws_metrics_caliper_report(h->cal_txn, METRES_NOGO);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+		/*
+		 * If any hanging caliper measurement, dump it, and free any tags
+		 */
+		lws_metrics_caliper_report_hist(h->cal_txn, (struct lws *)NULL);
+#endif
+>>>>>>> upstream/master
 
 		lws_sul_schedule(h->context, 0, &h->sul_retry,
 				 lws_sspc_sul_retry_cb, LWS_US_PER_SEC);
@@ -136,10 +151,11 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 		     void *user, void *in, size_t len)
 {
 	lws_sspc_handle_t *h = (lws_sspc_handle_t *)lws_get_opaque_user_data(wsi);
-	uint8_t s[32], pkt[LWS_PRE + 2048], *p = pkt + LWS_PRE,
-		*end = p + sizeof(pkt) - LWS_PRE;
+	size_t pktsize = wsi->a.context->max_http_header_data;
 	void *m = (void *)((uint8_t *)&h[1]);
+	uint8_t *pkt = NULL, *p = NULL, *end = NULL;
 	const uint8_t *cp;
+	uint8_t s[64];
 	lws_usec_t us;
 	int flags, n;
 
@@ -152,7 +168,16 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
 		lwsl_warn("%s: CONNECTION_ERROR\n", __func__);
+<<<<<<< HEAD
 		lws_metrics_caliper_report(h->cal_txn, METRES_NOGO);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+		/*
+		 * If any hanging caliper measurement, dump it, and free any tags
+		 */
+		lws_metrics_caliper_report_hist(h->cal_txn, (struct lws *)NULL);
+#endif
+>>>>>>> upstream/master
 		lws_set_opaque_user_data(wsi, NULL);
 		h->cwsi = NULL;
 		lws_sul_schedule(h->context, 0, &h->sul_retry,
@@ -160,7 +185,7 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
         case LWS_CALLBACK_RAW_CONNECTED:
-		if (!h)
+		if (!h || lws_fi(&h->fic, "sspc_fail_on_linkup"))
 			return -1;
 		lwsl_info("%s: CONNECTED (%s)\n", __func__, h->ssi.streamtype);
 
@@ -185,6 +210,13 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 		lwsl_info("%s: LWS_CALLBACK_RAW_CLOSE: %s proxy conn down, sspc h %s\n",
 			    __func__, lws_wsi_tag(wsi), lws_sspc_tag(h));
 		if (h) {
+			lws_dsh_destroy(&h->dsh);
+			if (h->ss_dangling_connected && h->ssi.state) {
+				lwsl_notice("%s: setting _DISCONNECTED\n", __func__);
+				h->ss_dangling_connected = 0;
+				h->prev_ss_state = LWSSSCS_DISCONNECTED;
+				h->ssi.state(ss_to_userobj(h), NULL, LWSSSCS_DISCONNECTED, 0);
+			}
 			h->cwsi = NULL;
 			/*
 			 * schedule a reconnect in 1s
@@ -207,9 +239,24 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 			return -1;
 		}
 
-		n = lws_ss_deserialize_parse(&h->parser, lws_get_context(wsi),
-					     h->dsh, in, len, &h->state, h,
-					     (lws_ss_handle_t **)m, &h->ssi, 1);
+		if (!len) {
+			lwsl_notice("%s: RAW_RX: zero len\n", __func__);
+
+			return -1;
+		}
+
+		if (lws_fi(&h->fic, "sspc_fake_rxparse_disconnect_me"))
+			n = LWSSSSRET_DISCONNECT_ME;
+		else
+			if (lws_fi(&h->fic, "sspc_fake_rxparse_destroy_me"))
+				n = LWSSSSRET_DESTROY_ME;
+			else
+				n = lws_ss_deserialize_parse(&h->parser,
+							     lws_get_context(wsi),
+							     h->dsh, in, len,
+							     &h->state, h,
+							     (lws_ss_handle_t **)m,
+							     &h->ssi, 1);
 		switch (n) {
 		case LWSSSSRET_OK:
 			break;
@@ -307,7 +354,12 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 					lws_dll2_get_tail(&h->metadata_owner),
 					lws_sspc_metadata_t, list);
 
-				cp = p;
+				pkt = lws_malloc(pktsize + LWS_PRE, __func__);
+				if (!pkt)
+					goto hangup;
+				cp = p = pkt + LWS_PRE;
+				end = p + pktsize;
+
 				n = lws_sspc_serialize_metadata(md, p, end);
 				if (n < 0)
 					goto metadata_hangup;
@@ -355,12 +407,17 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 			 *   length?
 			 */
 
+			pkt = lws_malloc(pktsize + LWS_PRE, __func__);
+			if (!pkt)
+				goto hangup;
+			cp = p = pkt + LWS_PRE;
+			end = p + pktsize;
+
 			if (h->metadata_owner.count) {
 				lws_sspc_metadata_t *md = lws_container_of(
 					lws_dll2_get_tail(&h->metadata_owner),
 					lws_sspc_metadata_t, list);
 
-				cp = p;
 				n = lws_sspc_serialize_metadata(md, p, end);
 				if (n < 0)
 					goto metadata_hangup;
@@ -387,7 +444,7 @@ callback_sspc_client(struct lws *wsi, enum lws_callback_reasons reason,
 				// break;
 			}
 
-			len = sizeof(pkt) - LWS_PRE - 19;
+			len = pktsize - LWS_PRE - 19;
 			flags = 0;
 			if (!h->ssi.tx) {
 				n = 0;
@@ -439,7 +496,10 @@ do_write_nz:
 			break;
 
 do_write:
-		n = lws_write(wsi, (uint8_t *)cp, (unsigned int)n, LWS_WRITE_RAW);
+		if (lws_fi(&h->fic, "sspc_link_write_fail"))
+			n = -1;
+		else
+			n = lws_write(wsi, (uint8_t *)cp, (unsigned int)n, LWS_WRITE_RAW);
 		if (n < 0) {
 			lwsl_notice("%s: WRITEABLE: %d\n", __func__, n);
 
@@ -451,12 +511,15 @@ do_write:
 		break;
 	}
 
+	lws_free(pkt);
+
 	return lws_callback_http_dummy(wsi, reason, user, in, len);
 
 metadata_hangup:
 	lwsl_err("%s: metadata too large\n", __func__);
 
 hangup:
+	lws_free(pkt);
 	lwsl_warn("hangup\n");
 	/* hang up on him */
 	return -1;
@@ -490,10 +553,29 @@ lws_sspc_create(struct lws_context *context, int tsi, const lws_ss_info_t *ssi,
 	 * and the streamname */
 
 	h = malloc(sizeof(lws_sspc_handle_t) + ssi->user_alloc +
-		   strlen(ssi->streamtype) + 1);
+				strlen(ssi->streamtype) + 1);
 	if (!h)
 		return 1;
 	memset(h, 0, sizeof(*h));
+
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+	h->fic.name = "sspc";
+	lws_xos_init(&h->fic.xos, lws_xos(&context->fic.xos));
+	if (ssi->fic.fi_owner.count)
+		lws_fi_import(&h->fic, &ssi->fic);
+
+	lws_fi_inherit_copy(&h->fic, &context->fic, "ss", ssi->streamtype);
+#endif
+
+	if (lws_fi(&h->fic, "sspc_create_oom")) {
+		/*
+		 * We have to do this a litte later, so we can cleanly inherit
+		 * the OOM pieces and drain the info fic
+		 */
+		lws_fi_destroy(&h->fic);
+		free(h);
+		return 1;
+	}
 
 	__lws_lc_tag(&context->lcg[LWSLCG_SSP_CLIENT], &h->lc, ssi->streamtype);
 
@@ -581,14 +663,27 @@ lws_sspc_destroy(lws_sspc_handle_t **ph)
 	h->destroying = 1;
 
 	/* if this caliper is still dangling at destroy, we failed */
+<<<<<<< HEAD
 	lws_metrics_caliper_report(h->cal_txn, METRES_NOGO);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+	/*
+	 * If any hanging caliper measurement, dump it, and free any tags
+	 */
+	lws_metrics_caliper_report_hist(h->cal_txn, (struct lws *)NULL);
+#endif
+>>>>>>> upstream/master
 	if (h->ss_dangling_connected && h->ssi.state) {
 		lws_sspc_event_helper(h, LWSSSCS_DISCONNECTED, 0);
 		h->ss_dangling_connected = 0;
 	}
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_destroy(&h->fi);
+=======
+	lws_fi_destroy(&h->fic);
+>>>>>>> upstream/master
 #endif
 
 	lws_sul_cancel(&h->sul_retry);
@@ -618,6 +713,8 @@ lws_sspc_destroy(lws_sspc_handle_t **ph)
 
 	lws_sspc_event_helper(h, LWSSSCS_DESTROYING, 0);
 	*ph = NULL;
+
+	lws_sul_cancel(&h->sul_retry);
 
 	__lws_lc_untag(&h->lc);
 	free(h);
@@ -776,7 +873,10 @@ _lws_sspc_set_metadata(struct lws_sspc_handle *h, const char *name,
 	 * We have to stash the metadata and pass it to the proxy
 	 */
 
-	md = lws_malloc(sizeof(*md) + len, "set metadata");
+	if (lws_fi(&h->fic, "sspc_fail_metadata_set"))
+		md = NULL;
+	else
+		md = lws_malloc(sizeof(*md) + len, "set metadata");
 	if (!md) {
 		lwsl_err("%s: OOM\n", __func__);
 

@@ -240,6 +240,18 @@ __lws_wsi_create_with_role(struct lws_context *context, int tsi,
 //	lwsl_debug("%s: tsi %d: role: %s\n", __func__, tsi,
 //			ops ? ops->name : "none");
 
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+	lws_xos_init(&wsi->fic.xos, lws_xos(&context->fic.xos));
+#endif
+
+	lws_fi_inherit_copy(&wsi->fic, &context->fic, "wsi", NULL);
+
+	if (lws_fi(&wsi->fic, "createfail")) {
+		lws_fi_destroy(&wsi->fic);
+		lws_free(wsi);
+		return NULL;
+	}
+
 	return wsi;
 }
 
@@ -342,9 +354,9 @@ lws_rx_flow_control(struct lws *wsi, int _enable)
 
 	/* any bit set in rxflow_bitmap DISABLEs rxflow control */
 	if (en & LWS_RXFLOW_REASON_APPLIES_ENABLE_BIT)
-		wsi->rxflow_bitmap &= (uint8_t)~(en & 0xff);
+		wsi->rxflow_bitmap = (uint8_t)(wsi->rxflow_bitmap & ~(en & 0xff));
 	else
-		wsi->rxflow_bitmap |= (uint8_t)(en & 0xff);
+		wsi->rxflow_bitmap = (uint8_t)(wsi->rxflow_bitmap | (en & 0xff));
 
 	if ((LWS_RXFLOW_PENDING_CHANGE | (!wsi->rxflow_bitmap)) ==
 	    wsi->rxflow_change_to)

@@ -34,6 +34,9 @@ lws_getaddrinfo46(struct lws *wsi, const char *ads, struct addrinfo **result)
 {
 	lws_metrics_caliper_declare(cal, wsi->a.context->mt_conn_dns);
 	struct addrinfo hints;
+#if defined(LWS_WITH_SYS_METRICS)
+	char buckname[32];
+#endif
 	int n;
 
 	memset(&hints, 0, sizeof(hints));
@@ -54,8 +57,20 @@ lws_getaddrinfo46(struct lws *wsi, const char *ads, struct addrinfo **result)
 		hints.ai_family = PF_UNSPEC;
 	}
 
+#if defined(LWS_WITH_CONMON)
+	wsi->conmon_datum = lws_now_usecs();
+#endif
+
 	wsi->dns_reachability = 0;
-	n = getaddrinfo(ads, NULL, &hints, result);
+	if (lws_fi(&wsi->fic, "dnsfail"))
+		n = EAI_FAIL;
+	else
+		n = getaddrinfo(ads, NULL, &hints, result);
+
+#if defined(LWS_WITH_CONMON)
+	wsi->conmon.ciu_dns = (lws_conmon_interval_us_t)
+					(lws_now_usecs() - wsi->conmon_datum);
+#endif
 
 	/*
 	 * Which EAI_* are available and the meanings are highly platform-
@@ -81,15 +96,34 @@ lws_getaddrinfo46(struct lws *wsi, const char *ads, struct addrinfo **result)
 #endif
 		wsi->dns_reachability = 1;
 		lws_metrics_caliper_report(cal, METRES_NOGO);
+<<<<<<< HEAD
 		lws_metrics_hist_bump_priv_wsi(wsi, mth_conn_failures, "dns=badsrv");
 		lwsl_notice("%s: asking to recheck CPD in 1ms\n", __func__);
 		lws_system_cpd_start_defer(wsi->a.context, LWS_US_PER_MS);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+		lws_snprintf(buckname, sizeof(buckname), "dns=\"unreachable %d\"", n);
+		lws_metrics_hist_bump_priv_wsi(wsi, mth_conn_failures, buckname);
+#endif
+		lwsl_debug("%s: asking to recheck CPD in 1s\n", __func__);
+		lws_system_cpd_start_defer(wsi->a.context, LWS_US_PER_SEC);
+>>>>>>> upstream/master
 	}
 
 	lwsl_info("%s: getaddrinfo '%s' says %d\n", __func__, ads, n);
 
+<<<<<<< HEAD
 	if (n < 0)
 		lws_metrics_hist_bump_priv_wsi(wsi, mth_conn_failures, "dns=nxdomain");
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+	if (n < 0) {
+		lws_snprintf(buckname, sizeof(buckname), "dns=\"nores %d\"", n);
+		lws_metrics_hist_bump_priv_wsi(wsi, mth_conn_failures, buckname);
+	}
+#endif
+
+>>>>>>> upstream/master
 	lws_metrics_caliper_report(cal, n >= 0 ? METRES_GO : METRES_NOGO);
 
 	return n;
@@ -305,7 +339,7 @@ solo:
 	lwsi_set_state(wsi, LRS_WAITING_DNS);
 
 	lwsl_info("%s: %s: lookup %s:%u\n", __func__, wsi->lc.gutag, ads, port);
-	(void)port;
+	wsi->conn_port = (uint16_t)port;
 
 #if !defined(LWS_WITH_SYS_ASYNC_DNS)
 	n = 0;
@@ -318,13 +352,19 @@ solo:
 #else
 	/* this is either FAILED, CONTINUING, or already called connect_4 */
 
-	n = lws_async_dns_query(wsi->a.context, wsi->tsi, ads,
+	if (lws_fi(&wsi->fic, "dnsfail"))
+		return lws_client_connect_3_connect(wsi, NULL, NULL, -4, NULL);
+	else
+		n = lws_async_dns_query(wsi->a.context, wsi->tsi, ads,
 				LWS_ADNS_RECORD_A, lws_client_connect_3_connect,
 				wsi, NULL);
 
+<<<<<<< HEAD
 	lwsl_notice("%s: %s: post async dns, state 0x%x\n",
 			__func__, lws_wsi_tag(wsi), lwsi_state(wsi));
 
+=======
+>>>>>>> upstream/master
 	if (n == LADNS_RET_FAILED_WSI_CLOSED)
 		return NULL;
 

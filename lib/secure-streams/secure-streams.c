@@ -173,7 +173,8 @@ static const uint32_t ss_state_txn_validity[] = {
 };
 
 int
-lws_ss_check_next_state(uint8_t *prevstate, lws_ss_constate_t cs)
+lws_ss_check_next_state(lws_lifecycle_t *lc, uint8_t *prevstate,
+			lws_ss_constate_t cs)
 {
 	if (cs >= LWSSSCS_USER_BASE)
 		/*
@@ -184,29 +185,34 @@ lws_ss_check_next_state(uint8_t *prevstate, lws_ss_constate_t cs)
 
 	if (cs >= LWS_ARRAY_SIZE(ss_state_txn_validity)) {
 		/* we don't recognize this state as usable */
-		lwsl_err("%s: bad new state %u\n", __func__, cs);
+		lwsl_err("%s: %s: bad new state %u\n", __func__, lc->gutag, cs);
 		assert(0);
 		return 1;
 	}
 
 	if (*prevstate >= LWS_ARRAY_SIZE(ss_state_txn_validity)) {
 		/* existing state is broken */
-		lwsl_err("%s: bad existing state %u\n", __func__,
-				(unsigned int)*prevstate);
+		lwsl_err("%s: %s: bad existing state %u\n", __func__,
+			 lc->gutag, (unsigned int)*prevstate);
 		assert(0);
 		return 1;
 	}
 
 	if (ss_state_txn_validity[*prevstate] & (1u << cs)) {
+
+		lwsl_notice("%s: %s: %s -> %s\n", __func__, lc->gutag,
+			    lws_ss_state_name((int)*prevstate),
+			    lws_ss_state_name((int)cs));
+
 		/* this is explicitly allowed, update old state to new */
 		*prevstate = (uint8_t)cs;
 
 		return 0;
 	}
 
-	lwsl_err("%s: transition from %s -> %s is illegal\n", __func__,
-			lws_ss_state_name((int)*prevstate),
-			lws_ss_state_name((int)cs));
+	lwsl_err("%s: %s: transition from %s -> %s is illegal\n", __func__,
+		 lc->gutag, lws_ss_state_name((int)*prevstate),
+		 lws_ss_state_name((int)cs));
 
 	assert(0);
 
@@ -233,7 +239,7 @@ lws_ss_event_helper(lws_ss_handle_t *h, lws_ss_constate_t cs)
 	if (!h)
 		return LWSSSSRET_OK;
 
-	if (lws_ss_check_next_state(&h->prev_ss_state, cs))
+	if (lws_ss_check_next_state(&h->lc, &h->prev_ss_state, cs))
 		return LWSSSSRET_DESTROY_ME;
 
 	if (cs == LWSSSCS_CONNECTED)
@@ -477,10 +483,11 @@ _lws_ss_client_connect(lws_ss_handle_t *h, int is_retry, void *conn_if_sspc_onw)
 	const struct ss_pcols *ssp;
 	size_t used_in, used_out;
 	union lws_ss_contemp ct;
-	char path[1024], ep[96];
 	lws_ss_state_return_t r;
 	int port, _port, tls;
+	char *path, ep[96];
 	lws_strexp_t exp;
+	struct lws *wsi;
 
 	if (!h->policy) {
 		lwsl_err("%s: ss with no policy\n", __func__);
@@ -646,14 +653,20 @@ _lws_ss_client_connect(lws_ss_handle_t *h, int is_retry, void *conn_if_sspc_onw)
 	i.protocol = ssp->protocol->name; /* lws protocol name */
 	i.local_protocol_name = i.protocol;
 
+	path = lws_malloc(h->context->max_http_header_data, __func__);
+	if (!path) {
+		lwsl_warn("%s: OOM on path prealloc\n", __func__);
+		return LWSSSSRET_TX_DONT_SEND;
+	}
+
 	if (ssp->munge) /* eg, raw doesn't use; endpoint strexp already done */
-		ssp->munge(h, path, sizeof(path), &i, &ct);
+		ssp->munge(h, path, h->context->max_http_header_data, &i, &ct);
 
 	i.pwsi = &h->wsi;
 
 #if defined(LWS_WITH_SSPLUGINS)
 	if (h->policy->plugins[0] && h->policy->plugins[0]->munge)
-		h->policy->plugins[0]->munge(h, path, sizeof(path));
+		h->policy->plugins[0]->munge(h, path, h->context->max_http_header_data);
 #endif
 
 	lwsl_info("%s: connecting %s, '%s' '%s' %s\n", __func__, i.method,
@@ -662,15 +675,25 @@ _lws_ss_client_connect(lws_ss_handle_t *h, int is_retry, void *conn_if_sspc_onw)
 #if defined(LWS_WITH_SYS_METRICS)
 	/* possibly already hanging connect retry... */
 	if (!h->cal_txn.mt)
+<<<<<<< HEAD
 		lws_metrics_caliper_bind(h->cal_txn, h->context->mt_ss_conn);
+=======
+		lws_metrics_caliper_bind(h->cal_txn, h->context->mth_ss_conn);
+
+	lws_metrics_tag_add(&h->cal_txn.mtags_owner, "ss", h->policy->streamtype);
+>>>>>>> upstream/master
 #endif
 
 	h->txn_ok = 0;
 	r = lws_ss_event_helper(h, LWSSSCS_CONNECTING);
-	if (r)
+	if (r) {
+		lws_free(path);
 		return r;
+	}
 
-	if (!lws_client_connect_via_info(&i)) {
+	wsi = lws_client_connect_via_info(&i);
+	lws_free(path);
+	if (!wsi) {
 		/*
 		 * We already found that we could not connect, without even
 		 * having to go around the event loop
@@ -723,7 +746,29 @@ lws_ss_create(struct lws_context *context, int tsi, const lws_ss_info_t *ssi,
 	pol = ssi->policy;
 	if (!pol) {
 #endif
+
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+		lws_fi_ctx_t temp_fic;
+
+		/*
+		 * We have to do a temp inherit from context to find out
+		 * early if we are supposed to inject a fault concealing
+		 * the policy
+		 */
+
+		memset(&temp_fic, 0, sizeof(temp_fic));
+		lws_xos_init(&temp_fic.xos, lws_xos(&context->fic.xos));
+		lws_fi_inherit_copy(&temp_fic, &context->fic, "ss", ssi->streamtype);
+
+		if (lws_fi(&temp_fic, "ss_no_streamtype_policy"))
+			pol = NULL;
+		else
+			pol = lws_ss_policy_lookup(context, ssi->streamtype);
+
+		lws_fi_destroy(&temp_fic);
+#else
 		pol = lws_ss_policy_lookup(context, ssi->streamtype);
+#endif
 		if (!pol) {
 			lwsl_info("%s: unknown stream type %s\n", __func__,
 				  ssi->streamtype);
@@ -797,10 +842,19 @@ lws_ss_create(struct lws_context *context, int tsi, const lws_ss_info_t *ssi,
 				ssi->streamtype ? ssi->streamtype : "nostreamtype");
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	h->fi.name = "ss";
 	h->fi.parent = &context->fi;
 	if (ssi->fi)
 		lws_fi_import(&h->fi, ssi->fi);
+=======
+	h->fic.name = "ss";
+	lws_xos_init(&h->fic.xos, lws_xos(&context->fic.xos));
+	if (ssi->fic.fi_owner.count)
+		lws_fi_import(&h->fic, &ssi->fic);
+
+	lws_fi_inherit_copy(&h->fic, &context->fic, "ss", ssi->streamtype);
+>>>>>>> upstream/master
 #endif
 
 	h->info = *ssi;
@@ -956,7 +1010,10 @@ lws_ss_create(struct lws_context *context, int tsi, const lws_ss_info_t *ssi,
 		}
 #endif
 
-		vho = lws_create_vhost(context, &i);
+		if (lws_fi(&ssi->fic, "ss_srv_vh_fail"))
+			vho = NULL;
+		else
+			vho = lws_create_vhost(context, &i);
 		if (!vho) {
 			lwsl_err("%s: failed to create vh", __func__);
 			goto late_bail;
@@ -1005,9 +1062,16 @@ lws_ss_create(struct lws_context *context, int tsi, const lws_ss_info_t *ssi,
 #if defined(LWS_WITH_SERVER) || defined(LWS_WITH_SYS_SMD)
 late_bail:
 #endif
+
+		if (ppss)
+			*ppss = NULL;
+
 		lws_pt_lock(pt, __func__);
 		lws_dll2_remove(&h->list);
 		lws_pt_unlock(pt);
+
+		lws_fi_destroy(&h->fic);
+		__lws_lc_untag(&h->lc);
 		lws_free(h);
 
 		return 1;
@@ -1168,7 +1232,18 @@ lws_ss_destroy(lws_ss_handle_t **ppss)
 #endif
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_destroy(&h->fi);
+=======
+	lws_fi_destroy(&h->fic);
+#endif
+
+#if defined(LWS_WITH_SYS_METRICS)
+	/*
+	 * If any hanging caliper measurement, dump it, and free any tags
+	 */
+	lws_metrics_caliper_report_hist(h->cal_txn, (struct lws *)NULL);
+>>>>>>> upstream/master
 #endif
 
 	lws_sul_cancel(&h->sul_timeout);
@@ -1355,8 +1430,10 @@ lws_ss_to_cb(lws_sorted_usec_list_t *sul)
 	if (r != LWSSSSRET_DISCONNECT_ME && r != LWSSSSRET_DESTROY_ME)
 		return;
 
-	if (h->wsi)
-		lws_set_timeout(h->wsi, 1, LWS_TO_KILL_ASYNC);
+	if (!h->wsi)
+		return;
+
+	lws_set_timeout(h->wsi, 1, LWS_TO_KILL_ASYNC);
 
 	_lws_ss_handle_state_ret_CAN_DESTROY_HANDLE(r, h->wsi, &h);
 }

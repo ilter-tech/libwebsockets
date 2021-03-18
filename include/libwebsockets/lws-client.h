@@ -90,6 +90,9 @@ enum lws_client_connect_ssl_connection_flags {
 	LCCSCF_IP_LOW_COST			= (1 << 27),
 	/**< set the "minimize monetary cost" bit on the IP packets of this
 	 *   connection */
+	LCCSCF_CONMON				= (1 << 28),
+	/**< If LWS_WITH_CONMON enabled for build, keeps a copy of the
+	 * getaddrinfo results so they can be queried subsequently */
 };
 
 /** struct lws_client_connect_info - parameters to connect with when using
@@ -203,10 +206,22 @@ struct lws_client_connect_info {
 #endif
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_ctx_t				*fi;
 	/**< Attach external Fault Injection context to the client wsi,
 	 * hierarchy is wsi -> vhost -> context */
 #endif
+=======
+	lws_fi_ctx_t				fic;
+	/**< Attach external Fault Injection context to the client wsi,
+	 * hierarchy is wsi -> vhost -> context */
+#endif
+	/* for convenience, available when FI disabled in build */
+	const char				*fi_wsi_name;
+	/**< specific Fault Injection namespace name for wsi created for this
+	 * connection, allows targeting by "wsi=XXX/..." if you give XXX here.
+	 */
+>>>>>>> upstream/master
 
 	uint16_t	keep_warm_secs;
 	/**< 0 means 5s.  If the client connection to the endpoint becomes idle,

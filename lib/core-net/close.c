@@ -46,6 +46,19 @@ __lws_reset_wsi(struct lws *wsi)
 
 	lws_free_set_NULL(wsi->cli_hostname_copy);
 
+#if defined(LWS_WITH_CONMON)
+
+	if (wsi->conmon.dns_results_copy) {
+		lws_conmon_addrinfo_destroy(wsi->conmon.dns_results_copy);
+		wsi->conmon.dns_results_copy = NULL;
+	}
+
+	wsi->conmon.ciu_dns =
+		wsi->conmon.ciu_sockconn =
+		wsi->conmon.ciu_tls =
+		wsi->conmon.ciu_txn_resp = 0;
+#endif
+
 	/*
 	 * if we have wsi in our transaction queue, if we are closing we
 	 * must go through and close all those first
@@ -295,10 +308,15 @@ __lws_close_free_wsi(struct lws *wsi, enum lws_close_status reason,
     (defined(LWS_WITH_CLIENT) || defined(LWS_WITH_SERVER))
 	/* wsi level: only reports if dangling caliper */
 	if (wsi->cal_conn.mt && wsi->cal_conn.us_start) {
+<<<<<<< HEAD
 		if ((priv_to_pub(wsi->cal_conn.mt)->flags) & LWSMTFL_REPORT_HIST) {
 			lws_metrics_hist_bump_priv_tagged(priv_to_pub(wsi->cal_conn.mt),
 						&wsi->cal_conn.mtags_owner);
 			lws_metrics_caliper_done(wsi->cal_conn);
+=======
+		if ((lws_metrics_priv_to_pub(wsi->cal_conn.mt)->flags) & LWSMTFL_REPORT_HIST) {
+			lws_metrics_caliper_report_hist(wsi->cal_conn, (struct lws *)NULL);
+>>>>>>> upstream/master
 		} else {
 			lws_metrics_caliper_report(wsi->cal_conn, METRES_NOGO);
 			lws_metrics_caliper_done(wsi->cal_conn);
@@ -732,11 +750,20 @@ async_close:
 
 				if (h) { // && (h->info.flags & LWSSSINFLAGS_ACCEPTED)) {
 
+<<<<<<< HEAD
 					/*
 					 * ss level: only reports if dangling caliper
 					 * not already reported
 					 */
 					lws_metrics_caliper_report(h->cal_txn, METRES_NOGO);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+					/*
+					 * If any hanging caliper measurement, dump it, and free any tags
+					 */
+					lws_metrics_caliper_report_hist(h->cal_txn, (struct lws *)NULL);
+#endif
+>>>>>>> upstream/master
 
 					h->cwsi = NULL;
 					//wsi->a.opaque_user_data = NULL;
@@ -752,7 +779,11 @@ async_close:
 				 * ss level: only reports if dangling caliper
 				 * not already reported
 				 */
+<<<<<<< HEAD
 				lws_metrics_caliper_report(h->cal_txn, METRES_NOGO);
+=======
+				lws_metrics_caliper_report_hist(h->cal_txn, wsi);
+>>>>>>> upstream/master
 
 				h->wsi = NULL;
 				wsi->a.opaque_user_data = NULL;
@@ -819,7 +850,11 @@ __lws_close_free_wsi_final(struct lws *wsi)
 #endif
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_destroy(&wsi->fi);
+=======
+	lws_fi_destroy(&wsi->fic);
+>>>>>>> upstream/master
 #endif
 
 	__lws_wsi_remove_from_sul(wsi);

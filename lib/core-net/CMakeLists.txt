@@ -70,6 +70,14 @@ if (LWS_WITH_CLIENT)
 		core-net/client/connect4.c
 		core-net/client/sort-dns.c
 	)
+<<<<<<< HEAD
+=======
+	if (LWS_WITH_CONMON)
+		list(APPEND SOURCES
+			core-net/client/conmon.c
+		)
+	endif()
+>>>>>>> upstream/master
 endif()
 
 if (LWS_WITH_SOCKS5 AND NOT LWS_WITHOUT_CLIENT)

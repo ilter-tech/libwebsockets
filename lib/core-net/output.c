@@ -114,7 +114,11 @@ lws_issue_raw(struct lws *wsi, unsigned char *buf, size_t len)
 
 	/* nope, send it on the socket directly */
 
-	m = (unsigned int)lws_ssl_capable_write(wsi, buf, n);
+	if (lws_fi(&wsi->fic, "sendfail"))
+		m = (unsigned int)LWS_SSL_CAPABLE_ERROR;
+	else
+		m = (unsigned int)lws_ssl_capable_write(wsi, buf, n);
+
 	lwsl_info("%s: ssl_capable_write (%d) says %d\n", __func__, n, m);
 
 	/* something got written, it can have been truncated now */
@@ -283,14 +287,23 @@ lws_ssl_capable_read_no_ssl(struct lws *wsi, unsigned char *buf, size_t len)
 	en = LWS_ERRNO;
 	if (n >= 0) {
 
+<<<<<<< HEAD
 		if (!n && wsi->unix_skt)
 			goto do_err;
+=======
+		//if (!n && wsi->unix_skt)
+		//	goto do_err;
+>>>>>>> upstream/master
 
 		/*
 		 * See https://libwebsockets.org/
 		 * pipermail/libwebsockets/2019-March/007857.html
 		 */
+<<<<<<< HEAD
 		if (!n)
+=======
+		if (!n && !wsi->unix_skt)
+>>>>>>> upstream/master
 			goto do_err;
 
 #if defined(LWS_WITH_SYS_METRICS) && defined(LWS_WITH_SERVER)
@@ -313,7 +326,12 @@ do_err:
 		lws_metric_event(wsi->a.vhost->mt_traffic_rx, METRES_NOGO, 0u);
 #endif
 
+<<<<<<< HEAD
 	lwsl_info("error on reading from skt : %d\n", en);
+=======
+	lwsl_info("%s: error on reading from skt : %d, errno %d\n",
+			__func__, n, en);
+>>>>>>> upstream/master
 
 	return LWS_SSL_CAPABLE_ERROR;
 }
@@ -328,20 +346,11 @@ lws_ssl_capable_write_no_ssl(struct lws *wsi, unsigned char *buf, size_t len)
 
 #if defined(LWS_WITH_UDP)
 	if (lws_wsi_is_udp(wsi)) {
-		if (wsi->a.context->udp_loss_sim_tx_pc) {
-			uint16_t u16;
-			/*
-			 * We should randomly drop some of these
-			 */
 
-			if (lws_get_random(wsi->a.context, &u16, 2) == 2 &&
-			    ((u16 * 100) / 0xffff) <=
-				    wsi->a.context->udp_loss_sim_tx_pc) {
-				lwsl_warn("%s: dropping udp tx\n", __func__);
-				/* pretend it was sent */
-				n = (int)(ssize_t)len;
-				goto post_send;
-			}
+		if (lws_fi(&wsi->fic, "udp_tx_loss")) {
+			/* pretend it was sent */
+			n = (int)(ssize_t)len;
+			goto post_send;
 		}
 
 		if (lws_has_buffered_out(wsi))

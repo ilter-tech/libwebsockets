@@ -265,41 +265,6 @@ struct lws_timed_vh_protocol {
 #endif
 
 /*
- * lws_dsh
-*/
-
-typedef struct lws_dsh_obj_head {
-	lws_dll2_owner_t		owner;
-	size_t				total_size; /* for this kind in dsh */
-	int				kind;
-} lws_dsh_obj_head_t;
-
-typedef struct lws_dsh_obj {
-	lws_dll2_t			list;	/* must be first */
-	struct lws_dsh	  		*dsh;	/* invalid when on free list */
-	size_t				size;	/* invalid when on free list */
-	size_t				asize;
-	int				kind; /* so we can account at free */
-} lws_dsh_obj_t;
-
-typedef struct lws_dsh {
-	lws_dll2_t			list;
-	uint8_t				*buf;
-	lws_dsh_obj_head_t		*oha;	/* array of object heads/kind */
-	size_t				buffer_size;
-	size_t				locally_in_use;
-	size_t				locally_free;
-	int				count_kinds;
-	uint8_t				being_destroyed;
-	/*
-	 * Overallocations at create:
-	 *
-	 *  - the buffer itself
-	 *  - the object heads array
-	 */
-} lws_dsh_t;
-
-/*
  * lws_async_dns
  */
 
@@ -397,11 +362,6 @@ struct lws_context_per_thread {
 	lws_sockfd_type dummy_pipe_fds[2];
 	struct lws *pipe_wsi;
 
-#if defined(LWS_WITH_NETLINK)
-	lws_dll2_owner_t			routing_table;
-	struct lws				*netlink;
-#endif
-
 	/* --- role based members --- */
 
 #if defined(LWS_ROLE_WS) && !defined(LWS_WITHOUT_EXTENSIONS)
@@ -440,10 +400,6 @@ struct lws_context_per_thread {
 	volatile unsigned char foreign_spinlock;
 
 	unsigned char tid;
-
-#if defined(LWS_WITH_NETLINK)
-	lws_route_uidx_t			route_uidx;
-#endif
 
 	unsigned char inside_service:1;
 	unsigned char inside_lws_service:1;
@@ -508,7 +464,11 @@ struct lws_vhost {
 #endif
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_ctx_t				fi;
+=======
+	lws_fi_ctx_t				fic;
+>>>>>>> upstream/master
 	/**< Fault Injection ctx for the vhost, hierarchy vhost->context */
 #endif
 
@@ -728,7 +688,11 @@ struct lws {
 #endif
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_ctx_t				fi;
+=======
+	lws_fi_ctx_t				fic;
+>>>>>>> upstream/master
 	/**< Fault Injection ctx for the wsi, hierarchy wsi->vhost->context */
 #endif
 
@@ -762,7 +726,12 @@ struct lws {
 #if defined(LWS_WITH_CLIENT)
 	struct client_info_stash	*stash;
 	char				*cli_hostname_copy;
+
+#if defined(LWS_WITH_CONMON)
+	struct lws_conmon		conmon;
+	lws_usec_t			conmon_datum;
 #endif
+#endif /* WITH_CLIENT */
 	void				*user_space;
 	void				*opaque_parent_data;
 
@@ -870,7 +839,7 @@ struct lws {
 	unsigned int sock_send_blocking:1;
 #endif
 
-	uint16_t			ocport, c_port;
+	uint16_t			ocport, c_port, conn_port;
 	uint16_t			retry;
 #if defined(LWS_WITH_CLIENT)
 	uint16_t			keep_warm_secs;
@@ -988,6 +957,13 @@ __lws_close_free_wsi(struct lws *wsi, enum lws_close_status, const char *caller)
 
 void
 __lws_free_wsi(struct lws *wsi);
+
+void
+lws_conmon_addrinfo_destroy(struct addrinfo *ai);
+
+int
+lws_conmon_append_copy_new_dns_results(struct lws *wsi,
+				       const struct addrinfo *cai);
 
 #if LWS_MAX_SMP > 1
 
@@ -1384,7 +1360,7 @@ void
 _lws_routing_entry_dump(lws_route_t *rou);
 
 void
-_lws_routing_table_dump(struct lws_context_per_thread *pt);
+_lws_routing_table_dump(struct lws_context *cx);
 
 #define LRR_IGNORE_PRI			(1 << 0)
 #define LRR_MATCH_SRC			(1 << 1)
@@ -1399,7 +1375,7 @@ void
 _lws_route_table_ifdown(struct lws_context_per_thread *pt, int idx);
 
 lws_route_uidx_t
-_lws_route_get_uidx(struct lws_context_per_thread *pt);
+_lws_route_get_uidx(struct lws_context *cx);
 
 int
 _lws_route_pt_close_route_users(struct lws_context_per_thread *pt,

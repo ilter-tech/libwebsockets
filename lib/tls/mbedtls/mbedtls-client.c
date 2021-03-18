@@ -188,7 +188,7 @@ int ERR_get_error(void)
 enum lws_ssl_capable_status
 lws_tls_client_connect(struct lws *wsi, char *errbuf, size_t elen)
 {
-	int m, n = SSL_connect(wsi->tls.ssl);
+	int m, n = SSL_connect(wsi->tls.ssl), en;
 	const unsigned char *prot;
 	unsigned int len;
 
@@ -199,6 +199,7 @@ lws_tls_client_connect(struct lws *wsi, char *errbuf, size_t elen)
 		return LWS_SSL_CAPABLE_DONE;
 	}
 
+	en = (int)LWS_ERRNO;
 	m = SSL_get_error(wsi->tls.ssl, n);
 
 	if (m == SSL_ERROR_WANT_READ || SSL_want_read(wsi->tls.ssl))
@@ -210,7 +211,10 @@ lws_tls_client_connect(struct lws *wsi, char *errbuf, size_t elen)
 	if (!n) /* we don't know what he wants, but he says to retry */
 		return LWS_SSL_CAPABLE_MORE_SERVICE;
 
-	lws_snprintf(errbuf, elen, "mbedtls connect %d %d %d", n, m, errno);
+	if (m == SSL_ERROR_SYSCALL && !en)
+		return LWS_SSL_CAPABLE_MORE_SERVICE;
+
+	lws_snprintf(errbuf, elen, "mbedtls connect %d %d %d", n, m, en);
 
 	return LWS_SSL_CAPABLE_ERROR;
 }
@@ -226,7 +230,15 @@ lws_tls_client_confirm_peer_cert(struct lws *wsi, char *ebuf, size_t ebuf_len)
 	char *sb = (char *)&pt->serv_buf[0];
 
 	if (!peer) {
+<<<<<<< HEAD
 		lws_metrics_hist_bump_priv_wsi(wsi, mth_conn_failures, "tls=nocert");
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+		lws_metrics_hist_bump_describe_wsi(wsi, lws_metrics_priv_to_pub(
+					wsi->a.context->mth_conn_failures),
+						   "tls=\"nocert\"");
+#endif
+>>>>>>> upstream/master
 		lwsl_info("peer did not provide cert\n");
 		lws_snprintf(ebuf, ebuf_len, "no peer cert");
 
@@ -241,21 +253,34 @@ lws_tls_client_confirm_peer_cert(struct lws *wsi, char *ebuf, size_t ebuf_len)
 		return 0;
 
 	case X509_V_ERR_HOSTNAME_MISMATCH:
+<<<<<<< HEAD
 		type = "tls=hostname";
+=======
+		type = "hostname";
+>>>>>>> upstream/master
 		avoid = LCCSCF_SKIP_SERVER_CERT_HOSTNAME_CHECK;
 		break;
 
 	case X509_V_ERR_INVALID_CA:
+<<<<<<< HEAD
 		type = "tls=invalidca";
+=======
+		type = "invalidca";
+>>>>>>> upstream/master
 		avoid = LCCSCF_ALLOW_SELFSIGNED;
 		break;
 
 	case X509_V_ERR_CERT_NOT_YET_VALID:
+<<<<<<< HEAD
 		type = "tls=notyetvalid";
+=======
+		type = "notyetvalid";
+>>>>>>> upstream/master
 		avoid = LCCSCF_ALLOW_EXPIRED;
 		break;
 
 	case X509_V_ERR_CERT_HAS_EXPIRED:
+<<<<<<< HEAD
 		type = "tls=expired";
 		avoid = LCCSCF_ALLOW_EXPIRED;
 		break;
@@ -263,6 +288,23 @@ lws_tls_client_confirm_peer_cert(struct lws *wsi, char *ebuf, size_t ebuf_len)
 
 	lwsl_info("%s: cert problem: %s\n", __func__, type);
 	lws_metrics_hist_bump_priv_wsi(wsi, mth_conn_failures, type);
+=======
+		type = "expired";
+		avoid = LCCSCF_ALLOW_EXPIRED;
+		break;
+	}
+
+	lwsl_info("%s: cert problem: %s\n", __func__, type);
+#if defined(LWS_WITH_SYS_METRICS)
+	{
+		char buckname[64];
+		lws_snprintf(buckname, sizeof(buckname), "tls=\"%s\"", type);
+		lws_metrics_hist_bump_describe_wsi(wsi,
+		     lws_metrics_priv_to_pub(wsi->a.context->mth_conn_failures),
+			      buckname);
+	}
+#endif
+>>>>>>> upstream/master
 	if (wsi->tls.use_ssl & avoid) {
 		lwsl_info("%s: allowing anyway\n", __func__);
 

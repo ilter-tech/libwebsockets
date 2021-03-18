@@ -819,6 +819,10 @@ callback_lws_openmetrics_prox_server(struct lws *wsi,
 		/* mark us as waiting for the reference name from the client */
 		pss->greet = 1;
 		pss->wsi = wsi;
+<<<<<<< HEAD
+=======
+		lws_validity_confirmed(wsi);
+>>>>>>> upstream/master
 
 		return 0;
 
@@ -844,6 +848,10 @@ callback_lws_openmetrics_prox_server(struct lws *wsi,
 			lws_strnncpy(pss->proxy_path, (const char *)in, len,
 				     sizeof(pss->proxy_path));
 
+<<<<<<< HEAD
+=======
+			lws_validity_confirmed(wsi);
+>>>>>>> upstream/master
 			lwsl_notice("%s: received greet '%s'\n", __func__,
 				    pss->proxy_path);
 			/*
@@ -917,6 +925,11 @@ callback_lws_openmetrics_prox_server(struct lws *wsi,
 			      (enum lws_write_protocol)LWS_WRITE_TEXT) < 0)
 			return 1;
 
+<<<<<<< HEAD
+=======
+		lws_validity_confirmed(wsi);
+
+>>>>>>> upstream/master
 		return 0;
 
 	default:
@@ -950,7 +963,12 @@ callback_lws_openmetrics_prox_client(struct lws *wsi,
 
 	case LWS_CALLBACK_PROTOCOL_INIT:
 
+<<<<<<< HEAD
 		lwsl_notice("%s: PROTOCOL_INIT on %s\n", __func__, lws_vh_tag(lws_get_vhost(wsi)));
+=======
+		lwsl_notice("%s: PROTOCOL_INIT on %s\n", __func__,
+					lws_vh_tag(lws_get_vhost(wsi)));
+>>>>>>> upstream/master
 
 
 		/*
@@ -994,6 +1012,10 @@ callback_lws_openmetrics_prox_client(struct lws *wsi,
 		lwsl_notice("%s: scheduling connect %s %s %s\n", __func__,
 				vhd->ws_server_uri, vhd->metrics_proxy_path, vhd->ba_secret);
 
+<<<<<<< HEAD
+=======
+		lws_validity_confirmed(wsi);
+>>>>>>> upstream/master
 		lws_sul_schedule(cx, 0, &vhd->sul, omc_connect_client, 1);
 		break;
 
@@ -1031,6 +1053,10 @@ callback_lws_openmetrics_prox_client(struct lws *wsi,
 		lwsl_warn("%s: connected to ws metrics agg server\n", __func__);
 		pss->greet = 1;
 		lws_callback_on_writable(wsi);
+<<<<<<< HEAD
+=======
+		lws_validity_confirmed(wsi);
+>>>>>>> upstream/master
 		return 0;
 
 	case LWS_CALLBACK_CLIENT_CLOSED:
@@ -1066,6 +1092,11 @@ callback_lws_openmetrics_prox_client(struct lws *wsi,
 				      LWS_WRITE_TEXT) < 0)
 				return 1;
 
+<<<<<<< HEAD
+=======
+			lws_validity_confirmed(wsi);
+
+>>>>>>> upstream/master
 			pss->greet = 0;
 			return 0;
 		}
@@ -1116,6 +1147,10 @@ callback_lws_openmetrics_prox_client(struct lws *wsi,
 			return 1;
 		}
 
+<<<<<<< HEAD
+=======
+		lws_validity_confirmed(wsi);
+>>>>>>> upstream/master
 		lwsl_info("%s: forwarded %d\n", __func__, lws_ptr_diff(p, start));
 
 		if (!pss->walk) {

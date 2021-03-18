@@ -59,7 +59,11 @@ typedef struct lws_ss_handle {
 	struct lws_dll2		cli_list;  /**< same server clients list */
 #endif
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_ctx_t		fi;	/**< Fault Injection context */
+=======
+	lws_fi_ctx_t		fic;	/**< Fault Injection context */
+>>>>>>> upstream/master
 #endif
 
 	struct lws_dll2_owner	src_list; /**< sink's list of bound sources */
@@ -285,7 +289,11 @@ typedef struct lws_sspc_handle {
 	struct lws_ss_serialization_parser parser;
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_ctx_t		fi;	/**< Fault Injection context */
+=======
+	lws_fi_ctx_t		fic;	/**< Fault Injection context */
+>>>>>>> upstream/master
 #endif
 
 	lws_dll2_owner_t	metadata_owner;
@@ -402,7 +410,7 @@ lws_ss_deserialize_tx_payload(struct lws_dsh *dsh, struct lws *wsi,
 			      lws_ss_tx_ordinal_t ord, uint8_t *buf,
 			      size_t *len, int *flags);
 int
-lws_ss_serialize_state(struct lws_dsh *dsh, lws_ss_constate_t state,
+lws_ss_serialize_state(struct lws *wsi, struct lws_dsh *dsh, lws_ss_constate_t state,
 		       lws_ss_tx_ordinal_t ack);
 
 void
@@ -468,6 +476,10 @@ int
 _lws_ss_set_metadata(lws_ss_metadata_t *omd, const char *name,
 		     const void *value, size_t len);
 
+int
+_lws_ss_alloc_set_metadata(lws_ss_metadata_t *omd, const char *name,
+			   const void *value, size_t len);
+
 lws_ss_state_return_t
 _lws_ss_client_connect(lws_ss_handle_t *h, int is_retry, void *conn_if_sspc_onw);
 
@@ -483,7 +495,8 @@ lws_sspc_event_helper(lws_sspc_handle_t *h, lws_ss_constate_t cs,
 		      lws_ss_tx_ordinal_t flags);
 
 int
-lws_ss_check_next_state(uint8_t *prevstate, lws_ss_constate_t cs);
+lws_ss_check_next_state(lws_lifecycle_t *lc, uint8_t *prevstate,
+			lws_ss_constate_t cs);
 
 void
 lws_proxy_clean_conn_ss(struct lws *wsi);
@@ -517,6 +530,29 @@ struct ss_pcols {
 	secstream_protocol_connect_munge_t		munge;
 	secstream_protocol_add_txcr_t			tx_cr_add;
 	secstream_protocol_get_txcr_t			tx_cr_est;
+};
+
+/*
+ * Because both sides of the connection share the conn, we allocate it
+ * during accepted adoption, and both sides point to it.
+ *
+ * When .ss or .wsi close, they must NULL their entry here so no dangling
+ * refereneces.
+ *
+ * The last one of the accepted side and the onward side to close frees it.
+ */
+
+
+
+
+struct conn {
+	struct lws_ss_serialization_parser parser;
+
+	lws_dsh_t		*dsh;	/* unified buffer for both sides */
+	struct lws		*wsi;	/* the proxy's client side */
+	lws_ss_handle_t		*ss;	/* the onward, ss side */
+
+	lws_ss_conn_states_t	state;
 };
 
 extern const struct ss_pcols ss_pcol_h1;

@@ -207,7 +207,7 @@ myss_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		interrupted = 1;
 	}
 
-	return 0;
+	return LWSSSSRET_OK;
 }
 
 static lws_ss_state_return_t
@@ -232,21 +232,34 @@ myss_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	switch (state) {
 	case LWSSSCS_CREATING:
-		lws_ss_start_timeout(m->ss, timeout_ms);
-		lws_ss_set_metadata(m->ss, "uptag", "myuptag123", 10);
-		lws_ss_set_metadata(m->ss, "ctype", "myctype", 7);
 		return lws_ss_client_connect(m->ss);
+
+	case LWSSSCS_CONNECTING:
+		lws_ss_start_timeout(m->ss, timeout_ms);
+		if (lws_ss_set_metadata(m->ss, "uptag", "myuptag123", 10))
+			/* can fail, eg due to OOM, retry later if so */
+			return LWSSSSRET_DISCONNECT_ME;
+
+		if (lws_ss_set_metadata(m->ss, "ctype", "myctype", 7))
+			/* can fail, eg due to OOM, retry later if so */
+			return LWSSSSRET_DISCONNECT_ME;
+		break;
 
 	case LWSSSCS_ALL_RETRIES_FAILED:
 		/* if we're out of retries, we want to close the app and FAIL */
 		interrupted = 1;
+		bad = 2;
 		break;
+
 	case LWSSSCS_QOS_ACK_REMOTE:
 		lwsl_notice("%s: LWSSSCS_QOS_ACK_REMOTE\n", __func__);
 		break;
 
 	case LWSSSCS_TIMEOUT:
 		lwsl_notice("%s: LWSSSCS_TIMEOUT\n", __func__);
+		/* if we're out of time */
+		interrupted = 1;
+		bad = 3;
 		break;
 
 	case LWSSSCS_USER_BASE:
@@ -257,7 +270,7 @@ myss_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 	}
 
-	return 0;
+	return LWSSSSRET_OK;
 }
 
 static int
@@ -368,12 +381,26 @@ static lws_state_notify_link_t * const app_notifier_list[] = {
 static int
 my_metric_report(lws_metric_pub_t *mp)
 {
+<<<<<<< HEAD
 	char buf[128];
 
 	if (lws_metrics_format(mp, buf, sizeof(buf)))
 		lwsl_user("%s: %s\n", __func__, buf);
 
 	return 0;
+=======
+	lws_metric_bucket_t *sub = mp->u.hist.head;
+	char buf[192];
+
+	do {
+		if (lws_metrics_format(mp, &sub, buf, sizeof(buf)))
+			lwsl_user("%s: %s\n", __func__, buf);
+	} while ((mp->flags & LWSMTFL_REPORT_HIST) && sub);
+
+	/* 0 = leave metric to accumulate, 1 = reset the metric */
+
+	return 1;
+>>>>>>> upstream/master
 }
 
 static const lws_system_ops_t system_ops = {
@@ -392,8 +419,8 @@ int main(int argc, const char **argv)
 {
 	struct lws_context_creation_info info;
 	struct lws_context *context;
+	int n = 0, expected = 0;
 	const char *p;
-	int n = 0;
 
 	signal(SIGINT, sigint_handler);
 
@@ -441,6 +468,7 @@ int main(int argc, const char **argv)
 #else
 	info.pss_policies_json = default_ss_policy;
 	info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS |
+		       LWS_SERVER_OPTION_H2_JUST_FIX_WINDOW_UPDATE_OVERFLOW |
 		       LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 #endif
 
@@ -461,7 +489,7 @@ int main(int argc, const char **argv)
 	context = lws_create_context(&info);
 	if (!context) {
 		lwsl_err("lws init failed\n");
-		return 1;
+		goto bail;
 	}
 
 #if !defined(LWS_SS_USE_SSPC)
@@ -506,7 +534,15 @@ int main(int argc, const char **argv)
 
 	lws_context_destroy(context);
 
-	lwsl_user("Completed: %s\n", bad ? "failed" : "OK");
+bail:
+	if ((p = lws_cmdline_option(argc, argv, "--expected-exit")))
+		expected = atoi(p);
 
-	return bad;
+	if (bad == expected) {
+		lwsl_user("Completed: OK (seen expected %d)\n", expected);
+		return 0;
+	} else
+		lwsl_err("Completed: failed: exit %d, expected %d\n", bad, expected);
+
+	return 1;
 }
