@@ -86,7 +86,11 @@ lws_client_connect_via_info(const struct lws_client_connect_info *i)
 	struct lws *wsi, *safe = NULL;
 	const struct lws_protocols *p;
 	const char *cisin[CIS_COUNT];
+<<<<<<< HEAD
 	struct lws_vhost *vh;
+=======
+	struct lws_vhost *vh, *v;
+>>>>>>> upstream/main
 	int
 #if LWS_MAX_SMP > 1
 		tid = 0,
@@ -151,6 +155,7 @@ lws_client_connect_via_info(const struct lws_client_connect_info *i)
 			vh = vh->vhost_next;
 	}
 
+<<<<<<< HEAD
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
 	wsi->fi.name = "wsi";
 	wsi->fi.parent = &vh->fi;
@@ -160,6 +165,43 @@ lws_client_connect_via_info(const struct lws_client_connect_info *i)
 		 * leaving it empty
 		 */
 		lws_fi_import(&wsi->fi, i->fi);
+=======
+#if defined(LWS_WITH_SECURE_STREAMS)
+	/* any of these imply we are a client wsi bound to an SS, which
+	 * implies our opaque user ptr is the ss (or sspc if PROXY_LINK) handle
+	 */
+	wsi->for_ss = !!(i->ssl_connection & (LCCSCF_SECSTREAM_CLIENT | LCCSCF_SECSTREAM_PROXY_LINK | LCCSCF_SECSTREAM_PROXY_ONWARD));
+	wsi->client_bound_sspc = !!(i->ssl_connection & LCCSCF_SECSTREAM_PROXY_LINK); /* so wsi close understands need to remove sspc ptr to wsi */
+	wsi->client_proxy_onward = !!(i->ssl_connection & LCCSCF_SECSTREAM_PROXY_ONWARD);
+#endif
+
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+	wsi->fic.name = "wsi";
+	if (i->fic.fi_owner.count)
+		/*
+		 * This moves all the lws_fi_t from i->fi to the vhost fi,
+		 * leaving it empty
+		 */
+		lws_fi_import(&wsi->fic, &i->fic);
+
+	lws_fi_inherit_copy(&wsi->fic, &i->context->fic, "wsi", i->fi_wsi_name);
+
+	if (lws_fi(&wsi->fic, "createfail"))
+		goto bail;
+
+#if defined(LWS_WITH_SECURE_STREAMS)
+#if defined(LWS_WITH_SECURE_STREAMS_PROXY_API)
+	if (wsi->client_bound_sspc) {
+		lws_sspc_handle_t *fih = (lws_sspc_handle_t *)i->opaque_user_data;
+		lws_fi_inherit_copy(&wsi->fic, &fih->fic, "wsi", NULL);
+	}
+#endif
+	if (wsi->for_ss) {
+		lws_ss_handle_t *fih = (lws_ss_handle_t *)i->opaque_user_data;
+		lws_fi_inherit_copy(&wsi->fic, &fih->fic, "wsi", NULL);
+	}
+#endif
+>>>>>>> upstream/main
 #endif
 
 	/*
@@ -187,7 +229,7 @@ lws_client_connect_via_info(const struct lws_client_connect_info *i)
 		wsi->conn_validity_wakesuspend = 1;
 
 	if (!i->vhost) {
-		struct lws_vhost *v = i->context->vhost_list;
+		v = i->context->vhost_list;
 
 		if (!v) { /* coverity */
 			lwsl_err("%s: no vhost\n", __func__);
@@ -195,9 +237,15 @@ lws_client_connect_via_info(const struct lws_client_connect_info *i)
 		}
 		if (!strcmp(v->name, "system"))
 			v = v->vhost_next;
-		lws_vhost_bind_wsi(v, wsi);
 	} else
-		lws_vhost_bind_wsi(i->vhost, wsi);
+		v = i->vhost;
+
+	lws_vhost_bind_wsi(v, wsi);
+
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+	/* additionally inerit from vhost we bound to */
+	lws_fi_inherit_copy(&wsi->fic, &v->fic, "wsi", i->fi_wsi_name);
+#endif
 
 	if (!wsi->a.vhost) {
 		lwsl_err("%s: No vhost in the context\n", __func__);
@@ -332,12 +380,6 @@ lws_client_connect_via_info(const struct lws_client_connect_info *i)
 		i->opaque_user_data;
 
 #if defined(LWS_WITH_SECURE_STREAMS)
-	/* any of these imply we are a client wsi bound to an SS, which
-	 * implies our opaque user ptr is the ss (or sspc if PROXY_LINK) handle
-	 */
-	wsi->for_ss = !!(i->ssl_connection & (LCCSCF_SECSTREAM_CLIENT | LCCSCF_SECSTREAM_PROXY_LINK | LCCSCF_SECSTREAM_PROXY_ONWARD));
-	wsi->client_bound_sspc = !!(i->ssl_connection & LCCSCF_SECSTREAM_PROXY_LINK); /* so wsi close understands need to remove sspc ptr to wsi */
-	wsi->client_proxy_onward = !!(i->ssl_connection & LCCSCF_SECSTREAM_PROXY_ONWARD);
 
 	if (wsi->for_ss) {
 		/* it's related to ss... the options are
@@ -362,7 +404,8 @@ lws_client_connect_via_info(const struct lws_client_connect_info *i)
 			&wsi->lc, "%s/%s/%s/(%s)", i->method ? i->method : "WS",
 			wsi->role_ops->name, i->address,
 #if defined(LWS_WITH_SECURE_STREAMS_PROXY_API)
-			wsi->client_bound_sspc ? lws_sspc_tag((lws_sspc_handle_t *)i->opaque_user_data) :
+			wsi->client_bound_sspc ?
+				lws_sspc_tag((lws_sspc_handle_t *)i->opaque_user_data) :
 #endif
 			lws_ss_tag(((lws_ss_handle_t *)i->opaque_user_data)));
 	} else
@@ -514,6 +557,7 @@ bail1:
 	lws_free_set_NULL(wsi->stash);
 
 bail:
+	lws_fi_destroy(&wsi->fic);
 	lws_free(wsi);
 #if defined(LWS_ROLE_H1) || defined(LWS_ROLE_H2)
 bail2:

@@ -34,6 +34,7 @@
 static int interrupted, bad = 1, port = 0 /* unix domain socket */;
 static const char *ibind = NULL; /* default to unix domain skt "proxy.ss.lws" */
 static lws_state_notify_link_t nl;
+static struct lws_context *context;
 
 /*
  * We just define enough policy so it can fetch the latest one securely
@@ -207,6 +208,7 @@ static lws_state_notify_link_t * const app_notifier_list[] = {
 };
 
 #if defined(LWS_WITH_SYS_METRICS)
+<<<<<<< HEAD
 
 static int
 my_metric_report(lws_metric_pub_t *mp)
@@ -230,39 +232,49 @@ sigint_handler(int sig)
 {
 	interrupted = 1;
 }
+=======
+>>>>>>> upstream/main
+
+static int
+my_metric_report(lws_metric_pub_t *mp)
+{
+	lws_metric_bucket_t *sub = mp->u.hist.head;
+	char buf[192];
+
+	do {
+		if (lws_metrics_format(mp, &sub, buf, sizeof(buf)))
+			lwsl_user("%s: %s\n", __func__, buf);
+	} while ((mp->flags & LWSMTFL_REPORT_HIST) && sub);
+
+	/* 0 = leave metric to accumulate, 1 = reset the metric */
+
+	return 1;
+}
+
+static const lws_system_ops_t system_ops = {
+	.metric_report = my_metric_report,
+};
+
+#endif
 
 static void
-assert_bt(int sig)
+sigint_handler(int sig)
 {
-#if defined(__APPLE__) || defined(__linux__)
-	  void *array[20];
-	  char **strings;
-	  int size, i;
-
-	  size = backtrace (array, 10);
-	  strings = backtrace_symbols (array, size);
-	  if (!strings)
-		  return;
-
-	    for (i = 0; i < size; i++)
-	      printf("%s\n", strings[i]);
-
-	  free (strings);
-#endif
+	lwsl_notice("%s\n", __func__);
+	interrupted = 1;
+	lws_cancel_service(context);
 }
 
 int main(int argc, const char **argv)
 {
-	int n = 0, logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE;
 	struct lws_context_creation_info info;
-	struct lws_context *context;
 	const char *p;
+	int n = 0;
+
+	memset(&info, 0, sizeof info);
+	lws_cmdline_option_handle_builtin(argc, argv, &info);
 
 	signal(SIGINT, sigint_handler);
-	signal(SIGABRT, assert_bt);
-
-	if ((p = lws_cmdline_option(argc, argv, "-d")))
-		logs = atoi(p);
 
 	/* connect to ssproxy via UDS by default, else via tcp with this port */
 	if ((p = lws_cmdline_option(argc, argv, "-p")))
@@ -273,15 +285,12 @@ int main(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-i")))
 		ibind = p;
 
-	lws_set_log_level(logs, NULL);
 	lwsl_user("LWS secure streams Proxy [-d<verb>]\n");
-
-	memset(&info, 0, sizeof info); /* otherwise uninitialized garbage */
 
 	info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS |
 		       LWS_SERVER_OPTION_H2_JUST_FIX_WINDOW_UPDATE_OVERFLOW |
 		       LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
-	info.fd_limit_per_thread = 1 + 32 + 1;
+	info.fd_limit_per_thread = 1 + 6 + 1;
 	info.pss_policies_json = default_ss_policy;
 	info.port = CONTEXT_PORT_NO_LISTEN;
 
@@ -290,6 +299,12 @@ int main(int argc, const char **argv)
 	nl.notify_cb = app_system_state_nf;
 	info.register_notifier_list = app_notifier_list;
 
+<<<<<<< HEAD
+=======
+	info.pt_serv_buf_size = (unsigned int)((6144 * 2) + 2048);
+	info.max_http_header_data = (unsigned short)(6144 + 2048);
+
+>>>>>>> upstream/main
 #if defined(LWS_WITH_SYS_METRICS)
 	info.system_ops = &system_ops;
 	info.metrics_prefix = "ssproxy";
@@ -303,8 +318,9 @@ int main(int argc, const char **argv)
 
 	/* the event loop */
 
-	while (n >= 0 && !interrupted)
+	do {
 		n = lws_service(context, 0);
+	} while (n >= 0 && !interrupted);
 
 	bad = 0;
 

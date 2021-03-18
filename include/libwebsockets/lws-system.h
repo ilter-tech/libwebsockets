@@ -183,7 +183,12 @@ typedef struct lws_system_ops {
 
 	int (*metric_report)(lws_metric_pub_t *mdata);
 	/**< metric \p item is reporting an event of kind \p rpt,
+<<<<<<< HEAD
 	 * held in \p mdata... */
+=======
+	 * held in \p mdata... return 0 to leave the metric object as it is,
+	 * or nonzero to reset it. */
+>>>>>>> upstream/main
 
 	uint32_t	wake_latency_us;
 	/**< time taken for this device to wake from suspend, in us

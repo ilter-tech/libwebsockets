@@ -28,7 +28,7 @@
 static const uint32_t botable[] = { 300, 500, 700, 1250, 5000
 				/* in case everything just dog slow */ };
 static const lws_retry_bo_t retry_policy = {
-	botable, LWS_ARRAY_SIZE(botable), LWS_ARRAY_SIZE(botable),
+	botable, LWS_ARRAY_SIZE(botable), LWS_RETRY_CONCEAL_ALWAYS,
 	/* don't conceal after the last table entry */ 0, 0, 20 };
 
 void
@@ -371,7 +371,7 @@ ok:
 
 	dns->wsi = lws_create_adopt_udp(context->vhost_list, ads, 53, 0,
 					lws_async_dns_protocol.name, NULL,
-				        NULL, NULL, &retry_policy);
+				        NULL, NULL, &retry_policy, "asyncdns");
 	if (!dns->wsi) {
 		lwsl_err("%s: foreign socket adoption failed\n", __func__);
 		return 1;
@@ -398,7 +398,11 @@ lws_adns_get_cache(lws_async_dns_t *dns, const char *name)
 				   lws_dll2_get_head(&dns->cached)) {
 		c = lws_container_of(d, lws_adns_cache_t, list);
 
+<<<<<<< HEAD
 		lwsl_notice("%s vs %s (inc %d)\n", name, c->name, c->incomplete);
+=======
+		// lwsl_notice("%s vs %s (inc %d)\n", name, c->name, c->incomplete);
+>>>>>>> upstream/main
 
 		if (!c->incomplete && !strcasecmp(name, c->name)) {
 			/* Keep sorted by LRU: move to the head */
@@ -705,8 +709,14 @@ lws_async_dns_query(struct lws_context *context, int tsi, const char *name,
 		if (c->results)
 			c->refcount++;
 
+<<<<<<< HEAD
 		lws_metric_event(context->mt_adns_cache,
 				 METRES_GO, 0);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+		lws_metric_event(context->mt_adns_cache,  METRES_GO, 0);
+#endif
+>>>>>>> upstream/main
 
 		if (cb(wsi, name, c->results, m, opaque) == NULL)
 			return LADNS_RET_FAILED_WSI_CLOSED;
@@ -715,7 +725,13 @@ lws_async_dns_query(struct lws_context *context, int tsi, const char *name,
 	} else
 		lwsl_info("%s: %s uncached\n", __func__, name);
 
+<<<<<<< HEAD
 	lws_metric_event(context->mt_adns_cache, METRES_NOGO, 0);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+	lws_metric_event(context->mt_adns_cache, METRES_NOGO, 0);
+#endif
+>>>>>>> upstream/main
 
 	/*
 	 * It's a 1.2.3.4 or ::1 type IP address already?  We don't need a dns

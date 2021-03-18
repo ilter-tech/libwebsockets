@@ -39,6 +39,23 @@ lws_client_conn_wait_timeout(lws_sorted_usec_list_t *sul)
 	lws_client_connect_3_connect(wsi, NULL, NULL, 0, NULL);
 }
 
+void
+lws_client_dns_retry_timeout(lws_sorted_usec_list_t *sul)
+{
+	struct lws *wsi = lws_container_of(sul, struct lws,
+					   sul_connect_timeout);
+
+	/*
+	 * This limits the amount of dns lookups we will try before
+	 * giving up and failing... it reuses sul_connect_timeout, which
+	 * isn't officially used until we connected somewhere.
+	 */
+
+	lwsl_info("%s: dns retry\n", __func__);
+	if (!lws_client_connect_2_dnsreq(wsi))
+		lwsl_notice("%s: DNS lookup failed\n", __func__);
+}
+
 /*
  * Figure out if an ongoing connect() has arrived at a final disposition or not
  *
@@ -129,11 +146,14 @@ lws_client_connect_3_connect(struct lws *wsi, const char *ads,
 #endif
 	struct lws_context_per_thread *pt = &wsi->a.context->pt[(int)wsi->tsi];
 	const struct sockaddr *psa = NULL;
-	uint16_t port = wsi->c_port;
+	uint16_t port = wsi->conn_port;
 	const char *cce, *iface;
 	lws_dns_sort_t *curr;
 	ssize_t plen = 0;
 	lws_dll2_t *d;
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+	int cfail;
+#endif
 	int m;
 
 	/*
@@ -146,6 +166,13 @@ lws_client_connect_3_connect(struct lws *wsi, const char *ads,
 	 */
 
 	if (result) {
+		lws_sul_cancel(&wsi->sul_connect_timeout);
+
+#if defined(LWS_WITH_CONMON)
+		/* append a copy from before the sorting */
+		lws_conmon_append_copy_new_dns_results(wsi, result);
+#endif
+
 		lws_sort_dns(wsi, result);
 #if defined(LWS_WITH_SYS_ASYNC_DNS)
 		lws_async_dns_freeaddrinfo(&result);
@@ -174,8 +201,19 @@ lws_client_connect_3_connect(struct lws *wsi, const char *ads,
 	    !wsi->speculative_connect_owner.count /* no spec attempt */ ) {
 		lwsl_notice("%s: dns lookup failed %d\n", __func__, n);
 
-		cce = "dns lookup failed";
-		goto oom4;
+		/*
+		 * DNS lookup itself failed... let's try again until we
+		 * timeout
+		 */
+
+		lwsi_set_state(wsi, LRS_UNCONNECTED);
+		lws_sul_schedule(wsi->a.context, 0, &wsi->sul_connect_timeout,
+				 lws_client_dns_retry_timeout,
+						 LWS_USEC_PER_SEC);
+		return wsi;
+
+//		cce = "dns lookup failed";
+//		goto oom4;
 	}
 
 	/*
@@ -395,11 +433,35 @@ ads_known:
 	 * Finally, make the actual connection attempt
 	 */
 
+<<<<<<< HEAD
 	if (wsi->cal_conn.mt)
 		lws_metrics_caliper_report(wsi->cal_conn, METRES_NOGO);
 	lws_metrics_caliper_bind(wsi->cal_conn, wsi->a.context->mt_conn_tcp);
 
 	m = connect(wsi->desc.sockfd, (const struct sockaddr *)psa, (unsigned int)n);
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+	if (wsi->cal_conn.mt)
+		lws_metrics_caliper_report(wsi->cal_conn, METRES_NOGO);
+	lws_metrics_caliper_bind(wsi->cal_conn, wsi->a.context->mt_conn_tcp);
+#endif
+
+	wsi->socket_is_permanently_unusable = 0;
+
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+	cfail = lws_fi(&wsi->fic, "connfail");
+	if (cfail)
+		m = -1;
+	else
+#endif
+		m = connect(wsi->desc.sockfd, (const struct sockaddr *)psa, (unsigned int)n);
+
+#if defined(LWS_WITH_CONMON)
+	wsi->conmon_datum = lws_now_usecs();
+	wsi->conmon.ciu_sockconn = 0;
+#endif
+
+>>>>>>> upstream/main
 	if (m == -1) {
 		/*
 		 * Since we're nonblocking, connect not having completed is not
@@ -409,6 +471,12 @@ ads_known:
 		 */
 
 		int errno_copy = LWS_ERRNO;
+
+#if defined(LWS_WITH_SYS_FAULT_INJECTION)
+		if (cfail)
+			/* fake an abnormal, fatal situation */
+			errno_copy = 999;
+#endif
 
 		lwsl_debug("%s: connect: errno: %d\n", __func__, errno_copy);
 
@@ -425,6 +493,14 @@ ads_known:
 			 * The connect() failed immediately...
 			 */
 
+<<<<<<< HEAD
+=======
+#if defined(LWS_WITH_CONMON)
+			wsi->conmon.ciu_sockconn = (lws_conmon_interval_us_t)
+					(lws_now_usecs() - wsi->conmon_datum);
+#endif
+
+>>>>>>> upstream/main
 			lws_metrics_caliper_report(wsi->cal_conn, METRES_NOGO);
 
 #if defined(_DEBUG)
@@ -436,8 +512,10 @@ ads_known:
 
 			lws_sa46_write_numeric_address(&wsi->sa46_peer, nads,
 						       sizeof(nads));
-			lwsl_info("%s: Connect failed: %s port %d\n", __func__,
-				  nads, port);
+
+			wsi->sa46_peer.sa4.sin_family = 0;
+			lwsl_info("%s: Connect failed: %s port %d (errno %d)\n",
+					__func__, nads, port, errno_copy);
 #if defined(LWS_WITH_UNIX_SOCK)
 			}
 #endif
@@ -481,6 +559,11 @@ conn_good:
 	 * The connection has happened
 	 */
 
+#if defined(LWS_WITH_CONMON)
+	wsi->conmon.ciu_sockconn = (lws_conmon_interval_us_t)
+					(lws_now_usecs() - wsi->conmon_datum);
+#endif
+
 #if !defined(LWS_PLAT_OPTEE)
 	{
 		socklen_t salen = sizeof(wsi->sa46_local);
@@ -492,7 +575,12 @@ conn_good:
 				&salen) == -1)
 			lwsl_warn("getsockname: %s\n", strerror(LWS_ERRNO));
 #if defined(_DEBUG)
-		lws_sa46_write_numeric_address(&wsi->sa46_local, buf, sizeof(buf));
+#if defined(LWS_WITH_UNIX_SOCK)
+		if (wsi->unix_skt)
+			buf[0] = '\0';
+		else
+#endif
+			lws_sa46_write_numeric_address(&wsi->sa46_local, buf, sizeof(buf));
 
 		lwsl_info("%s: %s: source ads %s\n", __func__, wsi->lc.gutag, buf);
 #endif

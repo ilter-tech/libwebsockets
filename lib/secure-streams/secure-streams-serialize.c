@@ -88,7 +88,7 @@ typedef enum {
 	RPAR_ORD0,
 } rx_parser_t;
 
-#if defined(_DEBUG)
+#if defined(_DEBUG) && !defined(LWS_WITH_NO_LOGS)
 static const char *sn[] = {
 	"unset",
 
@@ -262,7 +262,7 @@ lws_ss_deserialize_tx_payload(struct lws_dsh *dsh, struct lws *wsi,
  */
 
 int
-lws_ss_serialize_state(struct lws_dsh *dsh, lws_ss_constate_t state,
+lws_ss_serialize_state(struct lws *wsi, struct lws_dsh *dsh, lws_ss_constate_t state,
 		       lws_ss_tx_ordinal_t ack)
 {
 	uint8_t pre[12];
@@ -285,7 +285,8 @@ lws_ss_serialize_state(struct lws_dsh *dsh, lws_ss_constate_t state,
 
 	lws_ser_wu32be(&pre[n], ack);
 
-	if (lws_dsh_alloc_tail(dsh, KIND_SS_TO_P, pre, (unsigned int)n + 4, NULL, 0)) {
+	if (lws_dsh_alloc_tail(dsh, KIND_SS_TO_P, pre, (unsigned int)n + 4, NULL, 0) ||
+	    (wsi && lws_fi(&wsi->fic, "sspc_dsh_ss2p_oom"))) {
 		lwsl_err("%s: unable to alloc in dsh 2\n", __func__);
 
 		return 1;
@@ -408,35 +409,32 @@ lws_ss_deserialize_parse(struct lws_ss_serialization_parser *par,
 			case LWSSS_SER_TXPRE_ONWARD_CONNECT:
 				if (client)
 					goto hangup;
+
 				if (*state != LPCSPROX_OPERATIONAL)
 					goto hangup;
 
 				par->ps = RPAR_TYPE;
-				lwsl_notice("%s: LWSSS_SER_TXPRE_ONWARD_CONNECT\n", __func__);
+				lwsl_notice("%s: ONWARD_CONNECT\n", __func__);
 
-				if (proxy_pss_to_ss_h(pss) &&
-				    !proxy_pss_to_ss_h(pss)->wsi)
-					/*
-					 * We're going to try to do the onward
-					 * connect, but that could end in any
-					 * of the ways like DESTROY_ME etc
-					 */
-					switch (_lws_ss_client_connect(
-						proxy_pss_to_ss_h(pss), 0, parconn)) {
-					case LWSSSSRET_OK:
-						/* well, connect is ongoing */
-						break;
-					case LWSSSSRET_TX_DONT_SEND:
-						/* it has failed already... */
-						break;
-					case LWSSSSRET_DISCONNECT_ME:
-//						if (lws_ss_backoff(h))
-//							/* has been destroyed */
-//							return 1;
-						break;
-					case LWSSSSRET_DESTROY_ME:
-						goto hangup;
-					}
+				/*
+				 * Shrug it off if we are already connecting or
+				 * connected
+				 */
+
+				if (!proxy_pss_to_ss_h(pss) ||
+				    proxy_pss_to_ss_h(pss)->wsi)
+					break;
+
+				/*
+				 * We're going to try to do the onward connect
+				 */
+
+				if ((proxy_pss_to_ss_h(pss) &&
+				     lws_fi(&proxy_pss_to_ss_h(pss)->fic, "ssproxy_onward_conn_fail")) ||
+				    _lws_ss_client_connect(proxy_pss_to_ss_h(pss),
+							   0, parconn) ==
+							   LWSSSSRET_DESTROY_ME)
+					goto hangup;
 				break;
 
 			case LWSSS_SER_TXPRE_STREAMTYPE:
@@ -690,7 +688,9 @@ payload_ff:
 				/* time used later to find proxy hold time */
 				lws_ser_wu64be(&p[15], (uint64_t)us);
 
-				if (lws_dsh_alloc_tail(dsh, KIND_C_TO_P, pre,
+				if ((proxy_pss_to_ss_h(pss) &&
+				     lws_fi(&proxy_pss_to_ss_h(pss)->fic, "ssproxy_dsh_c2p_pay_oom")) ||
+				    lws_dsh_alloc_tail(dsh, KIND_C_TO_P, pre,
 						       23, cp, (unsigned int)n)) {
 					lwsl_err("%s: unable to alloc in dsh 3\n",
 						 __func__);
@@ -720,6 +720,11 @@ payload_ff:
 					/* we still have an sspc handle */
 					int ret = ssi->rx(client_pss_to_userdata(pss),
 						(uint8_t *)cp, (unsigned int)n, (int)flags);
+
+					if (client_pss_to_sspc_h(pss, ssi) &&
+					    lws_fi(&client_pss_to_sspc_h(pss, ssi)->fic, "sspc_rx_fake_destroy_me"))
+						ret = LWSSSSRET_DESTROY_ME;
+
 					switch (ret) {
 					case LWSSSSRET_OK:
 						break;
@@ -1010,7 +1015,10 @@ payload_ff:
 				 * Create the client's rx metadata entry
 				 */
 
-				md = lws_malloc(sizeof(lws_sspc_metadata_t) +
+				if (h && lws_fi(&h->fic, "sspc_rx_metadata_oom"))
+					md = NULL;
+				else
+					md = lws_malloc(sizeof(lws_sspc_metadata_t) +
 						par->rem + 1, "rxmeta");
 				if (!md) {
 					lwsl_err("%s: OOM\n", __func__);
@@ -1062,7 +1070,13 @@ payload_ff:
 				lws_free_set_NULL(par->ssmd->value__may_own_heap);
 			par->ssmd->value_on_lws_heap = 0;
 
-			par->ssmd->value__may_own_heap = lws_malloc((unsigned int)par->rem + 1, "metadata");
+			if (proxy_pss_to_ss_h(pss) &&
+			    lws_fi(&proxy_pss_to_ss_h(pss)->fic, "ssproxy_rx_metadata_oom"))
+				par->ssmd->value__may_own_heap = NULL;
+			else
+				par->ssmd->value__may_own_heap =
+					lws_malloc((unsigned int)par->rem + 1, "metadata");
+
 			if (!par->ssmd->value__may_own_heap) {
 				lwsl_err("%s: OOM mdv\n", __func__);
 				goto hangup;
@@ -1152,9 +1166,10 @@ payload_ff:
 				 * stream he asked for... schedule a chance to
 				 * inform him
 				 */
-				lwsl_err("%s: create '%s' fail\n",
-					__func__, par->streamtype);
+				lwsl_err("%s: create '%s' fail\n", __func__,
+					 par->streamtype);
 				*state = LPCSPROX_REPORTING_FAIL;
+				break;
 			} else {
 				lwsl_debug("%s: create '%s' OK\n",
 					__func__, par->streamtype);
@@ -1238,6 +1253,7 @@ payload_ff:
 			 * CREATING now so we'll know the metadata to sync.
 			 */
 
+<<<<<<< HEAD
 			h->creating_cb_done = 1;
 
 			/* at this point, we connected to the proxy OK */
@@ -1245,12 +1261,27 @@ payload_ff:
 
 			if (lws_ss_check_next_state(&h->prev_ss_state, LWSSSCS_CREATING))
 				return LWSSSSRET_DESTROY_ME;
+=======
+#if defined(LWS_WITH_SYS_METRICS)
+			/*
+			 * If any hanging caliper measurement, dump it, and free any tags
+			 */
+			lws_metrics_caliper_report_hist(h->cal_txn, (struct lws *)NULL);
+#endif
+>>>>>>> upstream/main
 
-			h->prev_ss_state = (uint8_t)LWSSSCS_CREATING;
+			if (!h->creating_cb_done) {
+				if (lws_ss_check_next_state(&h->lc, &h->prev_ss_state,
+							    LWSSSCS_CREATING))
+					return LWSSSSRET_DESTROY_ME;
+				h->prev_ss_state = (uint8_t)LWSSSCS_CREATING;
+				h->creating_cb_done = 1;
+			} else
+				h->prev_ss_state = LWSSSCS_DISCONNECTED;
 
 			if (ssi->state) {
 				n = ssi->state(client_pss_to_userdata(pss),
-							NULL, LWSSSCS_CREATING, 0);
+					       NULL, h->prev_ss_state, 0);
 				switch (n) {
 				case LWSSSSRET_OK:
 					break;
@@ -1399,7 +1430,8 @@ payload_ff:
 				if (cs == LWSSSCS_DISCONNECTED)
 					h->ss_dangling_connected = 0;
 
-				if (lws_ss_check_next_state(&h->prev_ss_state, cs))
+				if (lws_ss_check_next_state(&h->lc,
+							    &h->prev_ss_state, cs))
 					return LWSSSSRET_DESTROY_ME;
 
 				if (cs < LWSSSCS_USER_BASE)
@@ -1428,5 +1460,8 @@ swallow:
 	return LWSSSSRET_OK;
 
 hangup:
+
+	lwsl_notice("%s: hangup\n", __func__);
+
 	return LWSSSSRET_DISCONNECT_ME;
 }

@@ -29,7 +29,7 @@
 #include "private-lib-core.h"
 #include <unistd.h>
 
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__NetBSD__)
 #include <sys/resource.h>
 #include <sys/wait.h>
 #endif
@@ -151,7 +151,7 @@ lws_spawn_reap(struct lws_spawn_piped *lsp)
 	lsp_cb_t cb = lsp->info.reap_cb;
 	struct lws_spawn_piped temp;
 	struct tms tms;
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__NetBSD__)
 	struct rusage rusa;
 	int status;
 #endif
@@ -163,7 +163,7 @@ lws_spawn_reap(struct lws_spawn_piped *lsp)
 	/* check if exited, do not reap yet */
 
 	memset(&lsp->si, 0, sizeof(lsp->si));
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__NetBSD__)
 	n = wait4(lsp->child_pid, &status, WNOHANG, &rusa);
 	if (!n)
 		return 0;
@@ -228,12 +228,14 @@ lws_spawn_reap(struct lws_spawn_piped *lsp)
 	}
 
 	temp = *lsp;
-#if defined(__OpenBSD__)
+#if defined(__OpenBSD__) || defined(__NetBSD__)
 	n = wait4(lsp->child_pid, &status, WNOHANG, &rusa);
 	if (!n)
 		return 0;
 	lsp->si.si_code = WIFEXITED(status);
-	temp.si.si_status = status & 0xff;
+	if (lsp->si.si_code == CLD_EXITED)
+		temp.si.si_code = CLD_EXITED;
+	temp.si.si_status = WEXITSTATUS(status);
 #else
 	n = waitid(P_PID, (id_t)lsp->child_pid, &temp.si, WEXITED | WNOHANG);
 #endif
@@ -441,7 +443,7 @@ lws_spawn_piped(const struct lws_spawn_piped_info *i)
 		   lsp->stdwsi[LWS_STDERR]->desc.sockfd);
 
 	/* we are ready with the redirection pipes... do the (v)fork */
-#if !defined(LWS_HAVE_VFORK) || !defined(LWS_HAVE_EXECVPE)
+#if defined(__sun) || !defined(LWS_HAVE_VFORK) || !defined(LWS_HAVE_EXECVPE)
 	lsp->child_pid = fork();
 #else
 	lsp->child_pid = vfork();
@@ -539,8 +541,8 @@ lws_spawn_piped(const struct lws_spawn_piped_info *i)
 		close(lsp->pipe_fds[m][m != 0]);
 	}
 
-#if !defined(LWS_HAVE_VFORK) || !defined(LWS_HAVE_EXECVPE)
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__sun) || !defined(LWS_HAVE_VFORK) || !defined(LWS_HAVE_EXECVPE)
+#if defined(__linux__) || defined(__APPLE__) || defined(__sun)
 	m = 0;
 	while (i->env_array[m]){
 		const char *p = strchr(i->env_array[m], '=');

@@ -133,7 +133,11 @@ else()
 	option(LWS_WITH_RFC6724 "Enable RFC6724 DNS result sorting" OFF)
 endif()
 option(LWS_WITH_SYS_FAULT_INJECTION "Enable fault injection support" OFF)
+<<<<<<< HEAD
 option(LWS_WITH_SYS_METRICS "Lws Metrics API" ON)
+=======
+option(LWS_WITH_SYS_METRICS "Lws Metrics API" OFF)
+>>>>>>> upstream/main
 
 #
 # Secure Streams
@@ -178,6 +182,7 @@ option(LWS_WITH_LIBUV "Compile with support for libuv" OFF)
 option(LWS_WITH_LIBEVENT "Compile with support for libevent" OFF)
 option(LWS_WITH_GLIB "Compile with support for glib event loop" OFF)
 option(LWS_WITH_SDEVENT "Compile with support for sd-event loop" OFF)
+option(LWS_WITH_ULOOP "Compile with support for uloop" OFF)
 
 if (UNIX)
 # since v4.1, on unix platforms default is build any event libs as runtime plugins
@@ -278,11 +283,17 @@ option(LWS_WITH_FANALYZER "Enable gcc -fanalyzer if compiler supports" OFF)
 option(LWS_HTTP_HEADERS_ALL "Override header reduction optimization and include all like older lws versions" OFF)
 option(LWS_WITH_SUL_DEBUGGING "Enable zombie lws_sul checking on object deletion" OFF)
 option(LWS_WITH_PLUGINS_API "Build generic lws_plugins apis (see LWS_WITH_PLUGINS to also build protocol plugins)" OFF)
+option(LWS_WITH_CONMON "Collect introspectable connection latency stats on individual client connections" ON)
 
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 	option(LWS_WITH_NETLINK "Monitor Netlink for Routing Table changes" ON)
 else()
 	set(LWS_WITH_NETLINK 0)
+endif()
+
+if (${CMAKE_SYSTEM_NAME} MATCHES "SunOS")
+       # its openssl has md5 deprecated
+       set(LWS_SUPPRESS_DEPRECATED_API_WARNINGS 1)
 endif()
 
 

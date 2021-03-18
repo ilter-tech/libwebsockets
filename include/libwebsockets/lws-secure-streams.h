@@ -354,7 +354,11 @@ typedef struct lws_ss_info {
 #endif
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_ctx_t				*fi;
+=======
+	lws_fi_ctx_t				fic;
+>>>>>>> upstream/main
 	/**< Attach external Fault Injection context to the stream, hierarchy
 	 * is ss->context */
 #endif
@@ -622,11 +626,28 @@ lws_ss_rideshare(struct lws_ss_handle *h);
  * name with the value of the metadata on the left.
  *
  * Return 0 if OK or nonzero if, eg, metadata name does not exist on the
- * streamtype.
+ * streamtype.  You must check the result of this, eg, transient OOM can cause
+ * these to fail and you should retry later.
  */
-LWS_VISIBLE LWS_EXTERN int
+LWS_VISIBLE LWS_EXTERN int LWS_WARN_UNUSED_RESULT
 lws_ss_set_metadata(struct lws_ss_handle *h, const char *name,
 		    const void *value, size_t len);
+
+/**
+ * lws_ss_alloc_set_metadata() - copy data and bind to ss metadata
+ *
+ * \param h: secure streams handle
+ * \param name: metadata name from the policy
+ * \param value: pointer to user-managed data to bind to name
+ * \param len: length of the user-managed data in value
+ *
+ * Same as lws_ss_set_metadata(), but allocates a heap buffer for the data
+ * first and takes a copy of it, so the original can go out of scope
+ * immediately after.
+ */
+LWS_VISIBLE LWS_EXTERN int LWS_WARN_UNUSED_RESULT
+lws_ss_alloc_set_metadata(struct lws_ss_handle *h, const char *name,
+			  const void *value, size_t len);
 
 /**
  * lws_ss_get_metadata() - get current value of stream metadata item

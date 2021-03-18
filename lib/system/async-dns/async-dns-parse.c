@@ -263,8 +263,8 @@ start:
 
 		if (n < 1 || n != m ||
 		    strncmp(stack[0].name, stack[stp].name, (unsigned int)n)) {
-			lwsl_notice("%s: skipping %s vs %s\n", __func__,
-					stack[0].name, stack[stp].name);
+			//lwsl_notice("%s: skipping %s vs %s\n", __func__,
+			//		stack[0].name, stack[stp].name);
 			goto skip;
 		}
 
@@ -568,7 +568,7 @@ lws_adns_parse_udp(lws_async_dns_t *dns, const uint8_t *pkt, size_t len)
 		goto fail_out;
 	}
 
-	q->responded |= (uint8_t)n;
+	q->responded = (uint8_t)(q->responded | n);
 
 	/* we want to confirm the results against what we last requested... */
 

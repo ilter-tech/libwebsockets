@@ -139,6 +139,41 @@
 
 #include "libwebsockets.h"
 
+/*
+ * lws_dsh
+*/
+
+typedef struct lws_dsh_obj_head {
+	lws_dll2_owner_t		owner;
+	size_t				total_size; /* for this kind in dsh */
+	int				kind;
+} lws_dsh_obj_head_t;
+
+typedef struct lws_dsh_obj {
+	lws_dll2_t			list;	/* must be first */
+	struct lws_dsh	  		*dsh;	/* invalid when on free list */
+	size_t				size;	/* invalid when on free list */
+	size_t				asize;
+	int				kind; /* so we can account at free */
+} lws_dsh_obj_t;
+
+typedef struct lws_dsh {
+	lws_dll2_t			list;
+	uint8_t				*buf;
+	lws_dsh_obj_head_t		*oha;	/* array of object heads/kind */
+	size_t				buffer_size;
+	size_t				locally_in_use;
+	size_t				locally_free;
+	int				count_kinds;
+	uint8_t				being_destroyed;
+	/*
+	 * Overallocations at create:
+	 *
+	 *  - the buffer itself
+	 *  - the object heads array
+	 */
+} lws_dsh_t;
+
  /*
   *
   *  ------ lifecycle defines ------
@@ -412,6 +447,9 @@ struct lws_context {
 
 #if defined(LWS_WITH_NETLINK)
 	lws_sorted_usec_list_t			sul_nl_coldplug;
+	/* process can only have one netlink socket, have to do it in ctx */
+	lws_dll2_owner_t			routing_table;
+	struct lws				*netlink;
 #endif
 
 #if defined(LWS_PLAT_FREERTOS) || defined(WIN32)
@@ -456,7 +494,11 @@ struct lws_context {
 	lws_metric_t			*mt_adns_cache; /* async dns lookup lat */
 #endif
 #if defined(LWS_WITH_SECURE_STREAMS)
+<<<<<<< HEAD
 	lws_metric_t			*mt_ss_conn; /* SS connection latency */
+=======
+	lws_metric_t			*mth_ss_conn; /* SS connection outcomes */
+>>>>>>> upstream/main
 #endif
 #if defined(LWS_WITH_SECURE_STREAMS_PROXY_API)
 	lws_metric_t			*mt_ss_cliprox_conn; /* SS cli->prox conn */
@@ -486,7 +528,11 @@ struct lws_context {
 #endif
 
 #if defined(LWS_WITH_SYS_FAULT_INJECTION)
+<<<<<<< HEAD
 	lws_fi_ctx_t			fi;
+=======
+	lws_fi_ctx_t			fic;
+>>>>>>> upstream/main
 	/**< Toplevel Fault Injection ctx */
 #endif
 
@@ -658,6 +704,13 @@ struct lws_context {
 	uint16_t smd_queue_depth;
 #endif
 
+<<<<<<< HEAD
+=======
+#if defined(LWS_WITH_NETLINK)
+	lws_route_uidx_t			route_uidx;
+#endif
+
+>>>>>>> upstream/main
 	unsigned int deprecated:1;
 	unsigned int inside_context_destroy:1;
 	unsigned int being_destroyed:1;
@@ -687,8 +740,6 @@ struct lws_context {
 	uint16_t us_wait_resolution;
 
 	uint8_t max_fi;
-	uint8_t udp_loss_sim_tx_pc;
-	uint8_t udp_loss_sim_rx_pc;
 	uint8_t captive_portal_detect;
 	uint8_t captive_portal_detect_type;
 
@@ -877,6 +928,9 @@ lws_plat_ntpclient_config(struct lws_context *context);
 
 int
 lws_plat_ifname_to_hwaddr(int fd, const char *ifname, uint8_t *hwaddr, int len);
+
+int
+lws_plat_vhost_tls_client_ctx_init(struct lws_vhost *vhost);
 
 int
 lws_check_byte_utf8(unsigned char state, unsigned char c);

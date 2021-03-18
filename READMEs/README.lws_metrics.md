@@ -79,6 +79,53 @@ If the metrics backend requires a fixed schema, the mapping between the
 contain a `void * backend_opaque` that is ignored by lws and can be set and
 read by the external reporting handler implementation to facilitate that.
 
+<<<<<<< HEAD
+=======
+### Histogram metrics tagging
+
+Histogram metrics track differently-qualified results in the same metric, for
+example the metric `n.cn.failures` maintains separate result counts for all
+variations and kinds of failure.
+
+```
+[2021/03/01 06:34:05:6570] U: my_metric_report: ssproxy.n.cn.failures{ss="badcert_selfsigned",hostname="invalidca.badcert.warmcat.com",peer="46.105.127.147",tls="invalidca"} 2
+[2021/03/01 06:34:05:6573] U: my_metric_report: ssproxy.n.cn.failures{hostname="invalidca.badcert.warmcat.com",peer="46.105.127.147",tls="invalidca"} 1
+[2021/03/01 06:34:05:6576] U: my_metric_report: ssproxy.n.cn.failures{ss="badcert_expired",hostname="warmcat.com",peer="46.105.127.147",tls="expired"} 2
+[2021/03/01 06:34:05:6578] U: my_metric_report: ssproxy.n.cn.failures{hostname="warmcat.com",peer="46.105.127.147",tls="expired"} 1
+[2021/03/01 06:34:05:6580] U: my_metric_report: ssproxy.n.cn.failures{ss="badcert_hostname",hostname="hostname.badcert.warmcat.com",peer="46.105.127.147",tls="hostname"} 2
+[2021/03/01 06:34:05:6583] U: my_metric_report: ssproxy.n.cn.failures{hostname="hostname.badcert.warmcat.com",peer="46.105.127.147",tls="hostname"} 1
+[2021/03/01 06:34:05:6585] U: my_metric_report: ssproxy.n.cn.failures{dns="nores -2"} 8
+```
+
+The user handler for metrics is expected to iterate these, in the provided
+examples (eg, minimal-secure-streams-testsfail)
+
+```
+#if defined(LWS_WITH_SYS_METRICS)
+static int
+my_metric_report(lws_metric_pub_t *mp)
+{
+	lws_metric_bucket_t *sub = mp->u.hist.head;
+	char buf[192];
+
+	do {
+		if (lws_metrics_format(mp, &sub, buf, sizeof(buf)))
+			lwsl_user("%s: %s\n", __func__, buf);
+	} while ((mp->flags & LWSMTFL_REPORT_HIST) && sub);
+
+	/* 0 = leave metric to accumulate, 1 = reset the metric */
+
+	return 1;
+}
+
+static const lws_system_ops_t system_ops = {
+	.metric_report = my_metric_report,
+};
+
+#endif
+```
+
+>>>>>>> upstream/main
 ### `lws_metrics` decimation
 
 Event information can easily be produced faster than it can be transmitted, or
@@ -191,3 +238,14 @@ reports histogram results like this
 ```
 [2021/01/15 13:10:16:0933] U: my_metric_report: n.cn.failures: tot: 36, [ tls/invalidca: 5, tls/expired: 5, tls/hostname: 5, dns/nxdomain: 21 ]
 ```
+<<<<<<< HEAD
+=======
+
+## Support for openmetrics
+
+Openmetrics https://tools.ietf.org/html/draft-richih-opsawg-openmetrics-00
+defines a textual metrics export format comaptible with Prometheus.  Lws
+provides a protocol plugin in `./plugins/protocol_lws_openmetrics_export`
+that enables direct export for prometheus scraping, and also protocols to
+proxy openmetrics export for unreachable servers.
+>>>>>>> upstream/main

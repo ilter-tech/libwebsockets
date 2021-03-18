@@ -222,12 +222,26 @@ static const struct lws_protocols protocols[] = {
 static int
 my_metric_report(lws_metric_pub_t *mp)
 {
+<<<<<<< HEAD
 	char buf[128];
 
 	if (lws_metrics_format(mp, buf, sizeof(buf)))
 		lwsl_user("%s: %s\n", __func__, buf);
 
 	return 0;
+=======
+	lws_metric_bucket_t *sub = mp->u.hist.head;
+	char buf[192];
+
+	do {
+		if (lws_metrics_format(mp, &sub, buf, sizeof(buf)))
+			lwsl_user("%s: %s\n", __func__, buf);
+	} while ((mp->flags & LWSMTFL_REPORT_HIST) && sub);
+
+	/* 0 = leave metric to accumulate, 1 = reset the metric */
+
+	return 1;
+>>>>>>> upstream/main
 }
 
 static const lws_system_ops_t system_ops = {
